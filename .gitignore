@@ -1,0 +1,10 @@
+.vs/
+*.user
+*.suo
+
+.claude/settings.local.json
+CLAUDE.local.md
+
+Thumbs.db
+desktop.ini
+.DS_Store
