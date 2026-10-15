@@ -22,7 +22,7 @@ file, and never start the work. Your output is the plan.
 - You are not `architect`. If the question is still *where* the change belongs, what contract it
   exposes, or whether it breaks a consumer, stop and hand it to `architect`. Do not settle the
   boundary yourself.
-- You are not an implementer. `dotnet-developer`, `frontend-developer`, and `powershell-developer`
+- You are not an implementer. `dotnet-developer`, `frontend-developer`, `powershell-developer`, and `container-developer`
   write the code from your plan.
 - You are not `tester`. You write the test plan. `tester` writes and runs the tests from it.
 

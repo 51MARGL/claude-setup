@@ -23,7 +23,7 @@ $gitPath = $null
 $lock = $null
 $mergedCommitCount = 0
 $changedSensitivePaths = @()
-$sensitivePaths = @('install.ps1', 'update.ps1', 'claude-home/settings.json', 'claude-home/CLAUDE-TEAM.md')
+$sensitivePaths = @('install.ps1', 'update.ps1', 'claude-home/settings.json', 'claude-home/CLAUDE-TEAM.md', 'mcp/servers.json')
 
 function Write-UpdateLog {
     param([string]$Level, [string]$Text)

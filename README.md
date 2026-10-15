@@ -103,8 +103,8 @@ Protect your machine with these steps:
 
 Before each merge, the update writes the list of new commits and the changed files to
 `%USERPROFILE%\.claude\team-setup\update.log`. The message in Claude Code names the number of new
-commits. It also names `install.ps1`, `update.ps1`, `claude-home/settings.json`, or `claude-home/CLAUDE-TEAM.md` when a new
-commit changes them.
+commits. It also names `install.ps1`, `update.ps1`, `claude-home/settings.json`,
+`claude-home/CLAUDE-TEAM.md`, or `mcp/servers.json` when a new commit changes them.
 
 ## Use `/orchestrate` for bigger tasks
 
@@ -132,8 +132,8 @@ The workflows:
 | Workflow | Chain |
 |---|---|
 | `design` | `architect`, then it stops and waits for your decision |
-| `feature` | `architect` → `planner` → `git` branch → implementer → `tester` → `style-reviewer` + `code-reviewer` (+ guards) → fix pass → `docs-updater` → `git` commit. Use it for schema changes and migrations too |
-| `bugfix` | `Explore` → `git` branch → `tester` writes a failing test → implementer → `tester` → `code-reviewer` (+ guards) → fix pass → `docs-updater` → `git` commit. Use it for a vulnerability or a leaked secret too |
+| `feature` | `architect` → `planner` → `git` branch → implementer → `tester` → `tester` browser check → `style-reviewer` + `code-reviewer` (+ guards) → fix pass → `docs-updater` → `git` commit. Use it for schema changes and migrations too |
+| `bugfix` | `Explore` → `git` branch → `tester` writes a failing test → implementer → `tester` → `tester` browser check → `code-reviewer` (+ guards) → fix pass → `docs-updater` → `git` commit. Use it for a vulnerability or a leaked secret too |
 | `test` | `git` branch → `tester` → `code-reviewer` + `style-reviewer` → fix pass by `tester` → `docs-updater` → `git` commit. For test work with no production change |
 | `refactor` | `architect` → `Explore` → `git` branch → `tester` baseline → implementer → `tester` → `style-reviewer` + `code-reviewer` (+ guards) → fix pass → `docs-updater` → `git` commit |
 | `review` | local diff, or a pull request through `pr-reviewer`, with the guards in both modes. Local mode also runs `docs-updater` in report-only mode |
@@ -142,9 +142,14 @@ The workflows:
 Two guards add `security-reviewer` and `migration-reviewer` to the review step. The conditions are
 in `claude-home\commands\orchestrate.md`, section "The guards".
 
-The implementer is `dotnet-developer`, `frontend-developer`, or `powershell-developer`, chosen by
-the files that the plan touches. The implementers do not write or run tests. `tester` does all test
-work, and edits test files only.
+The implementer is `dotnet-developer`, `frontend-developer`, `powershell-developer`, or
+`container-developer`, chosen by the files that the plan touches. The implementers do not write or
+run tests. `tester` does all test work, and edits test files only.
+
+The browser check step runs in `feature` and `bugfix` only. It runs when the diff touches a UI file
+(`.tsx`, `.jsx`, `.css`, `.scss`, `.sass`, `.less`, or `.html`) outside the test folders, and the
+repository runs as a standalone app with a dev server. `tester` then drives a browser through the
+`playwright` MCP server and edits no file.
 
 The `git` branch step creates a work branch only when you are on the default branch. The `git`
 commit step commits only when you asked for a commit. Otherwise it writes the commit message and
@@ -217,7 +222,13 @@ team reviews it there, and each member gets it on the next automatic update.
    choose in `/config` for a project stays in that project's `.claude\settings.local.json` and
    takes precedence.
 6. It never changes a hook that already exists in your `settings.json`.
-7. It adds the MCP servers in `mcp\servers.json` with `claude mcp add --scope user`.
+7. It adds the MCP servers in `mcp\servers.json` with `claude mcp add --scope user`. An entry has
+   the type `stdio` or `http`. The installer finds your existing servers in the `mcpServers` keys of
+   `%USERPROFILE%\.claude.json`. When it cannot read that file, it runs `claude mcp get`. It never
+   changes or removes a server that exists. A changed entry in `servers.json` therefore never
+   reaches a machine that has the server. To get the new entry, run
+   `claude mcp remove <name> --scope user`, then run `install.ps1` again. When `npx` is missing for
+   a `stdio` server, the installer prints a Node.js 18 warning and still adds the server.
 8. It records the path of each file that it installs in
    `%USERPROFILE%\.claude\team-setup\install-state.json`. It overwrites an installed file that
    differs from the team copy. It makes no backup. It deletes a file that an earlier install added
@@ -236,13 +247,29 @@ team reviews it there, and each member gets it on the next automatic update.
 | `update.ps1` | The automatic update. Claude Code runs it at session start. See "Automatic updates". |
 | `claude-home\CLAUDE-TEAM.md` | Team global instructions. The installer copies them to `%USERPROFILE%\.claude\CLAUDE-TEAM.md`. They include one person's AuDHD and writing rules (ASD-STE100). Read them before you install them. |
 | `claude-home\settings.json` | Permission deny and ask lists, the hooks, the statusline, the model, and the effort level. |
-| `claude-home\agents\` | 14 agents: architect, planner, dotnet-developer, frontend-developer, powershell-developer, tester, code-reviewer, style-reviewer, security-reviewer, migration-reviewer, docs-updater, devops, pr-reviewer, git. `architect`, `planner`, `pr-reviewer`, `code-reviewer`, `security-reviewer`, and `migration-reviewer` run on opus. The implementers, `tester`, and `docs-updater` run on sonnet. `devops`, `style-reviewer`, and `git` run on haiku. `/orchestrate` runs `Explore` on haiku too. `/orchestrate` raises `tester` to opus for concurrency tests, for published contracts, or when `tester` asks for it. `/orchestrate` sets the model of each agent that it calls. When you call any other agent yourself, name the model in your request. |
+| `claude-home\agents\` | 16 agents: architect, planner, dotnet-developer, frontend-developer, powershell-developer, container-developer, tester, code-reviewer, style-reviewer, security-reviewer, migration-reviewer, docs-updater, devops, pr-reviewer, git, Explore. `architect`, `planner`, `pr-reviewer`, `code-reviewer`, `security-reviewer`, and `migration-reviewer` run on opus. The implementers, `tester`, and `docs-updater` run on sonnet. `devops`, `style-reviewer`, and `git` run on haiku. `Explore` runs on haiku too. It overrides the built-in `Explore` agent, so every call runs on haiku. `/orchestrate` raises `tester` to opus for concurrency tests, for published contracts, or when `tester` asks for it. `/orchestrate` sets the model of each agent that it calls. When you call any other agent yourself, name the model in your request. |
 | `claude-home\commands\orchestrate.md` | The `/orchestrate` command. See the section above. |
 | `claude-home\output-styles\audhd.md` | The AuDHD output style. The installer selects it for you when `settings.json` has no other style. You can also select it with `/config` → Output style. |
-| `claude-home\skills\strategic-compact\` | The skill and the `PostToolUse` hook that reads the context size from the transcript and suggests `/compact` at 30% of the window, then at each further 10%. Set `COMPACT_CONTEXT_PERCENT` and `COMPACT_CONTEXT_WINDOW` to change the values. |
+| `claude-home\skills\strategic-compact\` | The skill and the `PostToolUse` hook that reads the context size from the transcript and suggests `/compact` at 15% of the window, then at each further 10%. Set `COMPACT_CONTEXT_PERCENT` and `COMPACT_CONTEXT_WINDOW` to change the values. |
 | `claude-home\hooks\notify.ps1` | The hook that shows a Windows toast when Claude needs you. See the next section. |
 | `claude-home\statusline.ps1` | The statusline script. |
-| `mcp\servers.json` | User-scope MCP servers: `microsoft-learn`. |
+| `mcp\servers.json` | User-scope MCP servers: `microsoft-learn` (http), `playwright` (stdio, `cmd /c npx -y @playwright/mcp@latest --headless --isolated --browser msedge --output-dir %TEMP%\playwright-mcp`), and `context7` (http, no key). See "MCP servers". |
+
+## MCP servers
+
+The installer adds three MCP servers at user scope. See step 7 of "What the installer does".
+
+| Server | Type | Use |
+|---|---|---|
+| `microsoft-learn` | http | Microsoft and Azure documentation. |
+| `playwright` | stdio | The browser check step of `tester`. It runs Microsoft Edge headless and isolated. |
+| `context7` | http | Library documentation. It needs no key. |
+
+The team settings deny 4 `playwright` tools: `browser_evaluate`, `browser_run_code_unsafe`,
+`browser_file_upload`, and `browser_install`.
+
+To use a personal Context7 API key, add the server again yourself with
+`--header "Authorization: Bearer <key>"`. Never commit a key to this repository.
 
 ## Notifications
 
@@ -292,5 +319,7 @@ You can also disable them in `/hooks`.
 - PowerShell 7 (`pwsh`) on `PATH`. The hooks and the statusline run through `pwsh`.
 - Windows PowerShell 5.1 (`powershell.exe`). Windows includes it. The toast needs it.
 - Claude Code CLI (`claude`) on `PATH` for the MCP step.
+- Node.js 18 or later (`npx` on `PATH`), for the `playwright` MCP server.
+- Microsoft Edge, for the `playwright` MCP server.
 - Network access to your Azure DevOps server, for the `devops` and `pr-reviewer` agents.
 - Authentication for the `devops` agent. In the session, give a personal access token (PAT), the name of an environment variable that holds a PAT, or Windows integrated authentication. A PAT that you paste in the chat stays in the session transcripts under `%USERPROFILE%\.claude\projects`.
