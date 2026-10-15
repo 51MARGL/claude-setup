@@ -33,9 +33,9 @@ The blocks in `orchestrate.md` apply here too.
 transcript of the session and takes the context size from the usage of the last reply of the main
 session.
 
-1. At 30% of the context window it prints one message.
+1. At 15% of the context window it prints one message.
 2. After that, it prints one message at each further 10%.
-3. When the context falls below 30%, for example after `/compact`, it starts again. A smaller
+3. When the context falls below 15%, for example after `/compact`, it starts again. A smaller
    drop does not reset it.
 
 The hook never compacts anything. It states the size. You decide.
@@ -44,7 +44,7 @@ The hook never compacts anything. It states the size. You decide.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `COMPACT_CONTEXT_PERCENT` | `30` | The percent of the window for the first message. |
+| `COMPACT_CONTEXT_PERCENT` | `15` | The percent of the window for the first message. |
 | `COMPACT_CONTEXT_WINDOW` | `1000000` | The size of the context window in tokens. Set `200000` for a model without the 1M window. |
 
 State files live in `~/.claude/cache/strategic-compact/`. One file per session. The hook

@@ -1,6 +1,6 @@
 ---
 name: powershell-developer
-description: Use for any PowerShell work — build, release and tooling scripts, repository automation, scaffolding and code-generation scripts, module authoring, and REST calls made from PowerShell. Triggers on PowerShell, pwsh, ps1, psm1, psd1, script, scripting, cmdlet, module, PSScriptAnalyzer, Invoke-RestMethod, Invoke-WebRequest, automation script, build script, scaffolding script. Do NOT use for C#/.NET application code, for frontend work, or for Pester tests (use tester).
+description: Use for any PowerShell work — build, release and tooling scripts, repository automation, scaffolding and code-generation scripts, module authoring, and REST calls made from PowerShell. Triggers on PowerShell, pwsh, ps1, psm1, psd1, script, scripting, cmdlet, module, PSScriptAnalyzer, Invoke-RestMethod, Invoke-WebRequest, automation script, build script, scaffolding script. Do NOT use for C#/.NET application code, for frontend work, or for Pester tests (use tester), or for a Dockerfile, a compose file, or a Bicep file (use container-developer).
 model: sonnet
 ---
 
@@ -125,6 +125,7 @@ Before you write a new script, search for one that already does a similar job.
 - If your change touches input handling, authorization, data access, file paths, configuration,
   secrets, crypto, or an outbound call, say which of these in your report and name
   `security-reviewer` as the next step. Do not review it yourself.
+- A `Dockerfile`, a compose file, or a Bicep file belongs to `container-developer`, not to you.
 
 # Your report
 

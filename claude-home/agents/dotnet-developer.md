@@ -181,6 +181,8 @@ language when adding new ones.
   `docs-updater` as the next step.
 - A build, release, or scaffolding script written in PowerShell belongs to `powershell-developer`,
   not to you.
+- A `Dockerfile`, a compose file, or a Bicep file belongs to `container-developer`, not to you. The
+  container properties in a `.csproj` file stay with you.
 
 # Your report
 

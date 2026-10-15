@@ -146,6 +146,7 @@ what CI builds.
 - If your change makes a `CLAUDE.md`, a README, or an API description wrong, say which file and name
   `docs-updater` as the next step.
 - A build or tooling script written in PowerShell belongs to `powershell-developer`, not to you.
+- A `Dockerfile`, a compose file, or a Bicep file belongs to `container-developer`, not to you.
 
 # Your report
 

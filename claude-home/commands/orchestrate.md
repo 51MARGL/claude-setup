@@ -109,33 +109,35 @@ user says the change is risky. Use `sonnet` for a review step only when the diff
    When you skip it, name the two conditions in one line.
 1. `planner` — produce the phased implementation plan.
 2. `git` — the branch step. See [Shared steps](#shared-steps).
-3. Implementer — `dotnet-developer`, `frontend-developer`, or `powershell-developer`, chosen by the
-   files the plan touches. If the plan touches both backend and frontend, run both implementers,
+3. Implementer — `dotnet-developer`, `frontend-developer`, `powershell-developer`, or
+   `container-developer`, chosen by the files the plan touches. If the plan touches both backend and frontend, run both implementers,
    backend first. When the change adds or changes an entity or a schema, tell the implementer to
    generate the migration through the repository's own workflow script.
 4. `tester` — the test step. Give it the test plan from step 1.
-5. The review step: `style-reviewer` and `code-reviewer`, plus each reviewer that a guard adds. See
+5. `tester` — the browser check step. See [The browser check step](#the-browser-check-step--tester).
+6. The review step: `style-reviewer` and `code-reviewer`, plus each reviewer that a guard adds. See
    [The guards](#the-guards). Run them in parallel, in one message.
-6. Fix pass — see [The fix pass](#the-fix-pass).
-7. `docs-updater` — the docs step.
-8. `git` — the commit step.
+7. Fix pass — see [The fix pass](#the-fix-pass).
+8. `docs-updater` — the docs step.
+9. `git` — the commit step.
 
 ### bugfix
 
 Use this workflow for a vulnerability or a leaked secret too. The security guard then adds
 `security-reviewer`.
 
-1. `Explore` — find where the defect lives. Give it the symptom, not a guess at the cause.
+1. `Explore` — find where the defect lives. Give it the symptom, not a guess at the cause. Set the breadth to `medium`.
 2. `git` — the branch step.
 3. `tester` — write a test that reproduces the bug. Run it, and show that it fails for the reason
    in the bug report.
 4. Implementer — fix the bug. Give it the failing test as the definition of done.
 5. `tester` — the test step. Run the test from step 3 and the suite of its test project.
-6. The review step: `code-reviewer`, plus each reviewer that a guard adds. Tell `code-reviewer` to
+6. `tester` — the browser check step. See [The browser check step](#the-browser-check-step--tester).
+7. The review step: `code-reviewer`, plus each reviewer that a guard adds. Tell `code-reviewer` to
    confirm the fix and to look for the same defect elsewhere.
-7. Fix pass — see [The fix pass](#the-fix-pass).
-8. `docs-updater` — the docs step.
-9. `git` — the commit step.
+8. Fix pass — see [The fix pass](#the-fix-pass).
+9. `docs-updater` — the docs step.
+10. `git` — the commit step.
 
 If the repository has no tests, `tester` reports that at step 3. Then give the implementer the
 reproduction steps from the bug report instead.
@@ -161,7 +163,7 @@ If `tester` finds that production code is wrong, stop the chain. Print the failu
 
 0. `architect` — **run this by default.** Skip it only for a rename or an extraction that stays
    inside one project and changes no public surface. When you skip it, say why in one line.
-1. `Explore` — map every caller and every dependency of the code to be changed.
+1. `Explore` — map every caller and every dependency of the code to be changed. Set the breadth to `very thorough`.
 2. `git` — the branch step.
 3. `tester` — the baseline. Run the tests that cover the code from step 1, and record the counts.
    Add no test.
@@ -287,6 +289,40 @@ Say so in one line, and name the build as the only check in the final report.
 Why: the implementers do not write or run tests. Without this step, nothing in the chain runs
 them.
 
+### The browser check step — `tester`
+
+Run it after the test step, before the review step. It runs only in `feature` and `bugfix`.
+
+It runs only when both conditions are true:
+
+- The diff after the test step touches a file of one of these types, outside the test folders:
+  - `.tsx`
+  - `.jsx`
+  - `.css`
+  - `.scss`
+  - `.sass`
+  - `.less`
+  - `.html`
+- The repository runs as a standalone app with a dev server.
+
+Decide from the diff, not from the plan.
+
+1. Give `tester` these three inputs:
+   - the acceptance criteria. In `bugfix`, give the reproduction steps from the bug report as the
+     criteria.
+   - the scratchpad path for screenshots
+   - the dev-server script of the repository
+2. Tell it to edit no file.
+3. Put the result of each acceptance criterion in the step line.
+4. If a check fails because of production code, send the failure to the implementer. Then run the
+   test step again. Then run the browser check step again. This counts as one fix pass.
+5. If `tester` reports `SKIPPED: login needed`, offer the user a check in their own browser with
+   Claude in Chrome.
+
+When a condition is false, skip the step. Say so in the step line.
+
+Why: a unit test cannot show that a page renders and that the console has no error.
+
 ### The fix pass
 
 A review step can return two kinds of findings. Route each finding to its owner:
@@ -294,8 +330,8 @@ A review step can return two kinds of findings. Route each finding to its owner:
 - a defect in production code: the implementer that owns the stack
 - a missing test, or a defect in a test: `tester`
 
-Run the implementer first when both have findings. After the fix pass, run the test step again
-when the implementer changed code.
+Run the implementer first when both have findings. After the implementer changed code, run the test
+step again. Also run the browser check step again when that step ran before.
 
 When `security-reviewer` or `migration-reviewer` returned a blocking finding, run that reviewer
 again after the fix pass. Tell it to confirm that each blocking finding is closed, and that the fix
@@ -424,7 +460,8 @@ In time order:
    `bugfix`, and the baseline step of `tester` in `refactor`. Never put the gate between
    `architect` and `planner`, because the plan needs the design note.
 2. **Gate B — the code is done.** After the first test step that follows the implementer, and
-   before the first review step starts. The reviewers read the diff from disk, not from the
+   after the browser check step when that step runs. Gate B comes before the first review step
+   starts. The reviewers read the diff from disk, not from the
    context. A fix pass, its re-test, and a second review run never open gate B again.
 3. **Gate C — the task is done.** After the final report, and before a new task starts in the same
    session.
@@ -444,7 +481,7 @@ Never ask for a compact at these points. The next step needs the context that a 
 Ask for a compact at a gate when one of these is true. Otherwise continue and say nothing.
 
 1. The `[StrategicCompact]` hook printed a message since the last gate. The hook reads the context
-   size of this session from the transcript. It prints a message when the context reaches 30% of
+   size of this session from the transcript. It prints a message when the context reaches 15% of
    the window, and again at each further 10%.
 2. The next stage works on a different area of the code.
 
@@ -478,6 +515,7 @@ Stop the chain and report, when:
 - `tester` cannot reproduce the bug in the `bugfix` workflow. Do not fix a bug that no test or
   reproduction shows.
 - The test counts after a refactor do not match the baseline, and the fix pass already ran once.
+- The browser check fails again after one fix pass.
 - The user interrupts.
 - `architect` returned two viable options with a real trade-off. The choice is the user's. Print
   the recommendation and the alternatives, and stop. Do not pick.

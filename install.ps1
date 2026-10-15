@@ -433,19 +433,56 @@ try {
     } else {
         $mcpServers = Get-Content -LiteralPath $mcpConfigPath -Raw | ConvertFrom-Json -AsHashtable
         $claudeCli = Get-Command claude -ErrorAction SilentlyContinue
+        $userClaudeConfigPath = Join-Path $env:USERPROFILE '.claude.json'
+        $userClaudeConfigReadable = $true
+        $existingServerNames = @()
+        if (Test-Path -LiteralPath $userClaudeConfigPath) {
+            try {
+                $userClaudeConfigText = Get-Content -LiteralPath $userClaudeConfigPath -Raw
+                if (-not [string]::IsNullOrWhiteSpace($userClaudeConfigText)) {
+                    $userClaudeConfig = $userClaudeConfigText | ConvertFrom-Json -AsHashtable
+                    if ($userClaudeConfig -is [System.Collections.IDictionary] -and $userClaudeConfig['mcpServers'] -is [System.Collections.IDictionary]) {
+                        $existingServerNames = @($userClaudeConfig['mcpServers'].Keys)
+                    }
+                }
+            } catch {
+                $userClaudeConfigReadable = $false
+                Write-Warning "Cannot read '$userClaudeConfigPath'. The installer asks the claude CLI which MCP servers exist instead. $($_.Exception.Message)"
+            }
+        }
         foreach ($serverName in $mcpServers.Keys) {
             $server = $mcpServers[$serverName]
-            $addArguments = @('mcp', 'add', '--transport', $server['type'], '--scope', 'user', $serverName, $server['url'])
+            if ($server['type'] -eq 'stdio') {
+                $addArguments = @('mcp', 'add', '--transport', 'stdio', '--scope', 'user', $serverName, '--', $server['command']) + @($server['args'])
+            } elseif ($server['type'] -eq 'http') {
+                $addArguments = @('mcp', 'add', '--transport', $server['type'], '--scope', 'user', $serverName, $server['url'])
+            } else {
+                Write-Warning "MCP server '$serverName' has the unsupported type '$($server['type'])'. Skipped."
+                continue
+            }
 
             if (-not $claudeCli) {
                 Write-Warning "The claude CLI was not found on PATH. Run this command to add the MCP server '$serverName': claude $($addArguments -join ' ')"
                 continue
             }
 
-            & claude mcp get $serverName *> $null
-            if ($LASTEXITCODE -eq 0) {
+            if ($userClaudeConfigReadable) {
+                $serverExists = $serverName -in $existingServerNames
+            } else {
+                & claude mcp get $serverName *> $null
+                $serverExists = $LASTEXITCODE -eq 0
+            }
+            if ($serverExists) {
                 Write-Host "MCP server '$serverName' already exists. Skipped."
                 continue
+            }
+
+            $serverArguments = @($server['args'])
+            $usesNpx = $server['type'] -eq 'stdio' -and (
+                $server['command'] -eq 'npx' -or
+                ($serverArguments.Count -ge 2 -and $serverArguments[0] -eq '/c' -and $serverArguments[1] -eq 'npx'))
+            if ($usesNpx -and -not (Get-Command npx -ErrorAction SilentlyContinue)) {
+                Write-Warning "The MCP server '$serverName' needs Node.js 18 or later, and npx was not found on PATH. The server is added, but it does not start until Node.js is installed."
             }
 
             if ($PSCmdlet.ShouldProcess($serverName, 'Add MCP server at user scope')) {

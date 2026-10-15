@@ -44,13 +44,16 @@ the installed copy. The next automatic update overwrites an edited installed fil
   - `hooks`: a hook has the identity `command` + `args`. A hook with new `args` or a new `matcher`
     is added as a second hook. An existing hook is never changed.
   - `statusLine`: replaced.
+- **`mcp\servers.json`**: an entry has the type `stdio` or `http`. The installer adds it with
+  `claude mcp add --scope user`. It never changes an existing server. A changed entry reaches a
+  machine only after the user runs `claude mcp remove <name> --scope user` and `install.ps1` again.
 - **Placeholders**: the installer replaces `{{CLAUDE_HOME}}` and `{{TEAM_SETUP_REPO}}` with real
   paths. Use them in every path in `settings.json`.
 - **`CLAUDE-TEAM.md`**: copied. The user's own `%USERPROFILE%\.claude\CLAUDE.md` gets only the
   import line `@~/.claude/CLAUDE-TEAM.md`.
 
-`update.ps1` names `install.ps1`, `update.ps1`, `claude-home/settings.json`, and
-`claude-home/CLAUDE-TEAM.md` in its message when a new commit changes them (`$sensitivePaths`).
+`update.ps1` names `install.ps1`, `update.ps1`, `claude-home/settings.json`,
+`claude-home/CLAUDE-TEAM.md`, and `mcp/servers.json` in its message when a new commit changes them (`$sensitivePaths`).
 
 ## Texts that must agree
 
@@ -65,7 +68,7 @@ Several files hold the same fact. When you change one, change the others in the 
    ("Orchestrate multi-step work yourself"). `orchestrate.md` points to it. Do not copy it.
 4. **Rules from `MISTAKES.md`**: the PowerShell alias ban, the line-endings rule, and the task-scope
    rule are in several agent files (`dotnet-developer`, `frontend-developer`,
-   `powershell-developer`, `tester`, `docs-updater`).
+   `powershell-developer`, `container-developer`, `tester`, `docs-updater`).
 5. **The workflow chains**: `orchestrate.md` and the "Use `/orchestrate`" table in `README.md`.
 
 ## Writing rules for this repository
@@ -76,6 +79,8 @@ Several files hold the same fact. When you change one, change the others in the 
   changes CRLF to LF, so use the Edit tool.
 - An agent file starts with frontmatter: `name`, `description` (with the trigger words), `tools`
   when the agent is limited, and `model`.
+- An agent file with the name of a built-in agent (`Explore`) overrides that built-in agent in every
+  session.
 - The `git` agent never adds a `Co-Authored-By:` line or any other AI attribution line to a commit
   message.
 - `MISTAKES.md` belongs to each user and is not in this repository. A rule from it goes into
