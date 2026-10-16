@@ -115,7 +115,11 @@ try {
     $contextThousands = [Math]::Round($contextTokens / 1000)
     $windowThousands = [Math]::Round($windowTokens / 1000)
     $message = "[StrategicCompact] Context is at $percent% (${contextThousands}k of ${windowThousands}k tokens). At the next compact gate, ask the user to run /compact."
-    @{ systemMessage = $message; suppressOutput = $true } | ConvertTo-Json -Compress
+    @{
+        systemMessage      = $message
+        suppressOutput     = $true
+        hookSpecificOutput = @{ hookEventName = 'PostToolUse'; additionalContext = $message }
+    } | ConvertTo-Json -Compress -Depth 3
 } catch {
     exit 0
 }
