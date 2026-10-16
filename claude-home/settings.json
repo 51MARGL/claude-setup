@@ -77,8 +77,6 @@
       "Bash(az containerapp secret *)",
       "Bash(az acr credential *)",
       "Bash(az storage account keys list *)",
-      "Bash(taskkill *)",
-      "Bash(kill *)",
       "Bash(npm publish *)",
       "PowerShell(Remove-Item *)",
       "PowerShell(rm *)",
@@ -89,7 +87,6 @@
       "PowerShell(rmdir *)",
       "PowerShell(Remove-ItemProperty *)",
       "PowerShell(Clear-Content *)",
-      "PowerShell(Stop-Process *)",
       "PowerShell(Stop-Service *)",
       "PowerShell(Restart-Service *)",
       "PowerShell(Uninstall-Module *)",
@@ -127,11 +124,8 @@
       "PowerShell(az containerapp secret *)",
       "PowerShell(az acr credential *)",
       "PowerShell(az storage account keys list *)",
-      "PowerShell(taskkill *)",
       "PowerShell(New-AzResourceGroupDeployment *)",
       "PowerShell(New-AzSubscriptionDeployment *)",
-      "PowerShell(kill *)",
-      "PowerShell(spps *)",
       "PowerShell(npm publish *)"
     ]
   },
