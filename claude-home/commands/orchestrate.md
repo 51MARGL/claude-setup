@@ -374,7 +374,8 @@ Run it last, and only when the chain ends with no blocking finding open.
 2. Tell it to write the commit message and the pull-request title by its own rules.
 3. Tell it what to do with them:
    - The user asked for a commit in the task, or during the chain: stage the changed files by
-     name, and commit.
+     name, and commit. Quote the user's own words in the prompt, as `User request: "<words>"`.
+     Without the quote, `git` commits nothing.
    - The user did not ask: commit nothing. Return the message and the title only.
 4. Put the branch, the commit message, the pull-request title, and the commit hash or "not
    committed" in the final report.
