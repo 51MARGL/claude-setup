@@ -49,6 +49,7 @@ if ($installState -and $installState['installedFiles'] -is [System.Collections.I
     $previousInstalledFiles = @($installState['installedFiles'])
 }
 
+$installCompleted = $false
 $installLock = $null
 if (-not $WhatIfPreference) {
     New-Item -ItemType Directory -Path $stateRoot -Force | Out-Null
@@ -59,6 +60,7 @@ if (-not $WhatIfPreference) {
     }
 }
 
+$installedFiles = $null
 try {
     function Get-InstalledCommit {
         if (-not (Get-Command git -ErrorAction SilentlyContinue)) { return $null }
@@ -370,6 +372,21 @@ try {
 
     $sourceFiles = Get-ChildItem -LiteralPath $sourceRoot -Recurse -File
     $sourceRelativePaths = @($sourceFiles | ForEach-Object { [System.IO.Path]::GetRelativePath($sourceRoot, $_.FullName) })
+
+    $settingsContent = $null
+    if ('settings.json' -notin $excludedFiles) {
+        $settingsContent = Get-SettingsContent -SourcePath (Join-Path $sourceRoot 'settings.json') -TargetPath (Join-Path $targetRoot 'settings.json') -OutputStyle $outputStyleForSettingsJson
+    }
+
+    $mcpServers = $null
+    if (-not $SkipMcp) {
+        try {
+            $mcpServers = Get-Content -LiteralPath $mcpConfigPath -Raw | ConvertFrom-Json -AsHashtable
+        } catch {
+            throw "The MCP config file '$mcpConfigPath' is not valid JSON. Fix it, then run the installer again. $($_.Exception.Message)"
+        }
+    }
+
     $installedFiles = [System.Collections.Generic.List[string]]::new()
     foreach ($sourceFile in $sourceFiles) {
         $relativePath = [System.IO.Path]::GetRelativePath($sourceRoot, $sourceFile.FullName)
@@ -382,7 +399,6 @@ try {
         $targetExists = Test-Path -LiteralPath $targetPath
 
         if ($relativePath -eq 'settings.json') {
-            $settingsContent = Get-SettingsContent -SourcePath $sourceFile.FullName -TargetPath $targetPath -OutputStyle $outputStyleForSettingsJson
             if ($targetExists -and $settingsContent -ceq (Get-Content -LiteralPath $targetPath -Raw)) {
                 Write-Host "Unchanged $relativePath"
                 continue
@@ -392,15 +408,16 @@ try {
         }
 
         $sourceHash = (Get-FileHash -LiteralPath $sourceFile.FullName).Hash
-        $installedFiles.Add($relativePath)
         $targetHash = if ($targetExists) { (Get-FileHash -LiteralPath $targetPath).Hash }
         if ($targetHash -eq $sourceHash) {
             Write-Host "Unchanged $relativePath"
+            $installedFiles.Add($relativePath)
             continue
         }
         if ($PSCmdlet.ShouldProcess($targetPath, 'Copy file')) {
             New-Item -ItemType Directory -Path (Split-Path -Parent $targetPath) -Force | Out-Null
             Copy-Item -LiteralPath $sourceFile.FullName -Destination $targetPath -Force
+            $installedFiles.Add($relativePath)
             Write-Host "Installed $relativePath"
         }
     }
@@ -431,7 +448,6 @@ try {
     if ($SkipMcp) {
         Write-Host 'Skipped MCP servers'
     } else {
-        $mcpServers = Get-Content -LiteralPath $mcpConfigPath -Raw | ConvertFrom-Json -AsHashtable
         $claudeCli = Get-Command claude -ErrorAction SilentlyContinue
         $userClaudeConfigPath = Join-Path $env:USERPROFILE '.claude.json'
         $userClaudeConfigReadable = $true
@@ -525,6 +541,28 @@ try {
         $savedSwitchText = if ($savedSwitchNames.Count -gt 0) { $savedSwitchNames -join ' ' } else { 'none' }
         Write-Host "Saved switches: $savedSwitchText. update.ps1 uses these."
     }
+    $installCompleted = $true
 } finally {
+    if (-not $installCompleted -and -not $WhatIfPreference -and $null -ne $installedFiles) {
+        try {
+            $recoveryFiles = [System.Collections.Generic.List[string]]::new()
+            foreach ($recoveryPath in @($previousInstalledFiles) + @($installedFiles)) {
+                if ($recoveryPath -notin $removedFiles -and $recoveryPath -notin $recoveryFiles) { $recoveryFiles.Add($recoveryPath) }
+            }
+            Write-InstallState -State ([ordered]@{
+                repoPath        = $PSScriptRoot
+                switches        = [ordered]@{
+                    SkipStatusLine  = [bool]$SkipStatusLine
+                    SkipMcp         = [bool]$SkipMcp
+                    SkipOutputStyle = [bool]$SkipOutputStyle
+                    SkipAutoUpdate  = [bool]$SkipAutoUpdate
+                }
+                installedCommit = if ($installState) { $installState['installedCommit'] }
+                installedFiles  = $recoveryFiles.ToArray()
+            })
+        } catch {
+            Write-Warning "Could not write the recovery install state. $($_.Exception.Message)"
+        }
+    }
     if ($installLock) { $installLock.Dispose() }
 }

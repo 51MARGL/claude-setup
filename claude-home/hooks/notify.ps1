@@ -8,6 +8,8 @@ function Test-SessionWrittenSince {
 }
 
 try {
+    [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
+    [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
     $eventTime = [datetime]::UtcNow
     $payload = [Console]::In.ReadToEnd() | ConvertFrom-Json
     if (-not $payload) { exit 0 }

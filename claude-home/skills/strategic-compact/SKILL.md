@@ -32,8 +32,8 @@ The blocks in `orchestrate.md` apply here too.
 
 ## The hook
 
-`suggest-compact.ps1` runs at each user prompt (`UserPromptSubmit`) and after each `Agent`,
-`Task`, `Edit`, and `Write` call (`PostToolUse`).
+`suggest-compact.ps1` runs at each user prompt (`UserPromptSubmit`) and after each `Agent` and
+`Task` call (`PostToolUse`).
 
 The hook reads the context percent from the file `<session_id>.context.json`. The status line
 script (`statusline.ps1`) writes this file at each redraw. The hook uses the file when it is
@@ -43,9 +43,9 @@ When the file is missing or older, the hook reads the transcript of the session.
 context size from the usage of the last reply of the main session. Then it divides that size by
 `COMPACT_CONTEXT_WINDOW`.
 
-1. At 10% of the context window it prints one message.
-2. After that, it prints one message at each further 10%.
-3. When the context falls below 10%, for example after `/compact`, it starts again. A smaller
+1. At 15% of the context window it prints one message.
+2. After that, it prints one message at each further 10%: 25%, 35%, and so on.
+3. When the context falls below 15%, for example after `/compact`, it starts again. A smaller
    drop does not reset it.
 
 The hook never compacts anything. It states the size. You decide.
@@ -54,7 +54,7 @@ The hook never compacts anything. It states the size. You decide.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `COMPACT_CONTEXT_PERCENT` | `10` | The percent of the window for the first message. |
+| `COMPACT_CONTEXT_PERCENT` | `15` | The percent of the window for the first message. |
 | `COMPACT_CONTEXT_WINDOW` | `1000000` | The size of the context window in tokens. The hook uses it only when it reads the transcript. Set `200000` for a model without the 1M window. |
 
 Files live in `~/.claude/cache/strategic-compact/`. Each session has two files:

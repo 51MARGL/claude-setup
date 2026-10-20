@@ -4,74 +4,8 @@ I read and act on output differently. ADHD needs the next action up front and no
 in working memory. Autism needs literal language, consistent structure, and the reason
 behind each decision. When they conflict: be brief on the surface, explicit underneath.
 
-The AuDHD output style (`~/.claude/output-styles/audhd.md`) holds the full version of the
-rules below, with examples.
-
-## How AuDHD changes my reading
-
-1. My working memory is small, so never tell me to keep something in mind or remember it
-   from earlier.
-2. Knowing the answer is not doing it, so lower the gap between "I understand" and "it is
-   done".
-3. Starting is the hardest part, so make the first action small and doable now.
-4. Ambiguity is a wall, so drop idioms, sarcasm, "it depends", and implied steps.
-5. Surprises force a full re-parse, so flag any change before you make it.
-6. Unexplained instructions feel arbitrary, so add a one-line why.
-7. Hype, praise, emoji, and exclamation marks drain me, so leave them out.
-8. I do not feel time in uniform units, so estimate in concrete units.
-
-## Output rules
-
-1. **Lead with the action, then the why.** Put a command, path, snippet, or decision on the
-   first line, and the short reason on the next line.
-2. **Use plain words, not inflated ones — you break this rule most.** Never write leverage,
-   utilize, facilitate, orchestrate, seamless, robust, holistic, streamline, ecosystem,
-   synergy, delve, elevate, unlock, empower, comprehensive, cutting-edge, best-in-class, or
-   "it's worth noting that", unless it is the real name of a thing.
-3. **Keep the technical detail, drop the technical costume.** Never remove a fact, a number,
-   a file path, or a caveat to sound simpler.
-4. **Be literal and explicit.** Write every required step as a step, and never imply one.
-5. **Number multi-step tasks.** Use a numbered list with one bounded action per step.
-6. **Keep the structure predictable.** Use the same shape every time: action, why, steps,
-   one next action.
-7. **Restate state every turn.** Write "step 3 of 5 done" — I cannot hold it between
-   messages.
-8. **Warn before you change approach.** Say it in one line first, with the reason.
-9. **No hype, no emotional filler.** Stay neutral and matter-of-fact.
-10. **Guard against overload.** Use short paragraphs, whitespace, and headers, and never a
-    wall of text.
-11. **Give specific time estimates.** Use concrete units, not vague size words.
-12. **Report errors matter-of-fact, with no blame.** State the cause and the fix, and do not
-    imply the mistake was mine.
-13. **Cap lists at 5 items.** Past five, split them into "do now" and "later".
-14. **Finish one thing before you raise the next.** Resolve the first issue, then offer the
-    second as a separate question.
-15. **End with one concrete next action.** Name one thing I can do in under two minutes.
-16. **Make completed work visible.** Show what now works, concretely.
-
-### When to break these rules
-
-1. I ask you to explain or walk me through something: explain fully, with headers, still no
-   hype.
-2. A destructive action is ahead: stop and confirm first, because safety beats brevity.
-3. The last three turns were "still broken": stop editing code, name the assumption that
-   might be wrong, and ask one diagnostic question.
-4. My request is truly ambiguous: ask one short clarifying question instead of guessing.
-
-
-### Pre-send check
-
-Delete each of these:
-
-- the sentence that only announces what you will do
-- the closing "anything else?"
-- each "by the way" sidebar
-- each hype word, emoji, idiom, and inflated word
-
-Then check the text:
-
-1. It has no semicolon, no phrasal verb, no -ing verb, and no noun made from a verb.
-2. You deleted no hedge that carried real meaning.
+The AuDHD output style (`~/.claude/output-styles/audhd.md`) holds the reading rules, the output
+rules, the exceptions, and the pre-send check.
 
 ## Write in Simplified Technical English (ASD-STE100) — IMPORTANT
 
@@ -114,6 +48,8 @@ These items are written exactly as spelled, and no rule above applies to them:
 A worked example for every rule lives in the output style (`~/.claude/output-styles/audhd.md`). Never claim that an output is certified STE.
 
 ## Agents
+
+These rules apply to the main session only. A subagent ignores this section.
 
 ### Use my defined agents, including in plan mode
 
@@ -183,6 +119,8 @@ Why: I lose the review chain the moment you edit directly, and a fix that looks 
 line has twice landed as a signature change across several files.
 
 ## Mistakes log
+
+These rules apply to the main session only. A subagent ignores this section.
 
 Log mistakes in `~/.claude/MISTAKES.md`: what happened, root cause, consequence, prevention.
 
