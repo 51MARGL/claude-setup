@@ -13,6 +13,8 @@ $repoRoot = $PSScriptRoot
 $stateRoot = Join-Path $env:USERPROFILE '.claude\team-setup'
 $logPath = Join-Path $stateRoot 'update.log'
 $lastCheckPath = Join-Path $stateRoot 'update-last-check.txt'
+$lastStopPath = Join-Path $stateRoot 'update-last-stop.json'
+$stopMessageRepeatHours = 24
 $lockPath = Join-Path $stateRoot 'update.lock'
 $installStatePath = Join-Path $stateRoot 'install-state.json'
 $localGitTimeoutSeconds = 30
@@ -126,6 +128,34 @@ function Test-CheckIntervalElapsed {
     return $lastCheck.UtcDateTime -le $now.UtcDateTime.AddMinutes(-$CheckIntervalMinutes)
 }
 
+function Set-StopMessage {
+    param([string]$Reason, [string]$Text)
+
+    $storedReason = $null
+    $storedShownUtc = [DateTimeOffset]::MinValue
+    try {
+        $stored = Get-Content -LiteralPath $lastStopPath -Raw -ErrorAction Stop | ConvertFrom-Json -AsHashtable
+        $storedReason = [string]$stored['reason']
+        $storedShownUtc = [DateTimeOffset]::Parse([string]$stored['shownUtc'], [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind)
+    } catch {
+        $storedReason = $null
+    }
+
+    $now = [DateTimeOffset]::UtcNow
+    $isRepeat = $storedReason -eq $Reason -and $storedShownUtc -gt $now.AddHours(-$stopMessageRepeatHours) -and $storedShownUtc -le $now.AddMinutes(5)
+    if ($isRepeat) { return }
+
+    $script:updateMessage = $Text
+    try {
+        $temporaryPath = $lastStopPath + '.tmp'
+        $stopState = [ordered]@{ reason = $Reason; shownUtc = $now.ToString('o') }
+        Set-Content -LiteralPath $temporaryPath -Value ($stopState | ConvertTo-Json -Compress) -Encoding utf8NoBOM
+        Move-Item -LiteralPath $temporaryPath -Destination $lastStopPath -Force
+    } catch {
+        Write-UpdateLog 'WARN' "Cannot write $lastStopPath. $($_.Exception.Message)"
+    }
+}
+
 function Update-TeamSetup {
     if (-not (Test-Path -LiteralPath $installStatePath)) {
         Write-UpdateLog 'WARN' "No install state at $installStatePath. Run install.ps1 by hand once."
@@ -148,20 +178,25 @@ function Update-TeamSetup {
     $branch = Invoke-Git @('symbolic-ref', '--quiet', '--short', 'HEAD')
     if ($branch.ExitCode -ne 0 -or $branch.Output.Trim() -ne 'master') {
         Write-UpdateLog 'INFO' 'The clone is not on master. Update stopped.'
+        Set-StopMessage -Reason 'not-on-master' -Text "Team Claude setup auto-update skipped: the clone at $repoRoot is not on master."
         return
     }
 
     $status = Invoke-Git @('status', '--porcelain', '--untracked-files=no')
     if ($status.ExitCode -ne 0 -or $status.Output.Trim()) {
         Write-UpdateLog 'INFO' 'The clone has uncommitted changes. Update stopped.'
+        Set-StopMessage -Reason 'uncommitted-changes' -Text "Team Claude setup auto-update skipped: the clone at $repoRoot has uncommitted changes."
         return
     }
 
     $untrackedShippedFiles = Invoke-Git @('ls-files', '--others', '--exclude-standard', '--', 'claude-home')
     if ($untrackedShippedFiles.ExitCode -ne 0 -or $untrackedShippedFiles.Output.Trim()) {
         Write-UpdateLog 'INFO' 'The clone has untracked files in claude-home. Update stopped.'
+        Set-StopMessage -Reason 'untracked-files' -Text "Team Claude setup auto-update skipped: the clone at $repoRoot has untracked files in claude-home."
         return
     }
+
+    Remove-Item -LiteralPath $lastStopPath -Force -ErrorAction SilentlyContinue
 
     $mergeFailed = $false
     $fetch = Invoke-Git @('fetch', 'origin', 'master') -TimeoutSeconds $FetchTimeoutSeconds

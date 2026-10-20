@@ -529,7 +529,7 @@ Never ask for a compact at these points. The next step needs the context that a 
 Ask for a compact at a gate when one of these is true. Otherwise continue and say nothing.
 
 1. The `[StrategicCompact]` hook printed a message since the last gate. The hook reads the context
-   size of this session from the status line file, or from the transcript when that file is old. It prints a message when the context reaches 10% of
+   size of this session from the status line file, or from the transcript when that file is old. It prints a message when the context reaches 15% of
    the window, and again at each further 10%.
 2. The next stage works on a different area of the code.
 
@@ -621,9 +621,13 @@ After the report, check gate C. End with one next action the user can do in unde
   - the commit step
 - Never report a step as done when its agent reported a failure.
 - Keep every fact from an agent's report: a path, a number, a caveat.
-- Effort is session-wide. You cannot set it per step. When the chain needs more than the session
-  has, say so in one line before the first delegation, and let the user decide: "Effort is
-  `medium`. This chain needs `high`. Run `/effort high` and start me again."
+- Effort:
+  - An agent file can set `effort:` in its frontmatter. The values are `low`, `medium`, `high`,
+    `xhigh`, and `max`.
+  - An `Agent` call can pass `effort`. This needs Claude Code v2.1.292 or later.
+  - An agent with no value uses the session effort.
+  - Claude Haiku 5.5 supports effort levels.
+  - No team agent sets an effort value. All agents use the session effort.
 
 
 

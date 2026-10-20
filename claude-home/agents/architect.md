@@ -224,45 +224,6 @@ Proposed | Accepted | Superseded by ADR-<n>
 <YYYY-MM-DD>
 ```
 
-Worked example, in the shape and detail expected:
-
-```markdown
-# ADR-004: Register the external validation client in the shared core library
-
-## Context
-Every service that publishes a domain event must first validate the payload against an external
-REST validator. Each service already runs its own local validators. The validator's authentication
-needs a per-environment client certificate and a per-request proof, so the client is not trivial.
-
-## Decision
-Register the validation client and a facade interface in the shared library's common registration
-method. Services inject the facade alone, which runs the local validators first and the external
-validator second.
-
-## Consequences
-
-### Positive
-- One implementation of the certificate and proof handling, in the shared library.
-- A service opts in with a configuration key only.
-- The existing validation contexts are untouched.
-
-### Negative
-- Every service takes the shared library's version bump together.
-- A service that injects the two underlying interfaces separately bypasses the ordering. That has
-  to be banned by convention, because the compiler cannot catch it.
-
-### Alternatives considered
-- **A client per service**: duplicates the certificate and proof handling in every service.
-- **A separate validation service**: adds a network hop and a second failure mode in the request
-  path, for no isolation benefit.
-
-## Status
-Accepted
-
-## Date
-2026-09-21
-```
-
 # System design checklist
 
 Work only the items the change touches.

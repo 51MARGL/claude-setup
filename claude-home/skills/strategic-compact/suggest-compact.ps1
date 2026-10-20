@@ -81,7 +81,7 @@ try {
     if (-not $sessionId) { exit 0 }
 
     $windowTokens = Get-PositiveIntegerSetting -Value $env:COMPACT_CONTEXT_WINDOW -Default 1000000
-    $thresholdPercent = Get-PositiveIntegerSetting -Value $env:COMPACT_CONTEXT_PERCENT -Default 10
+    $thresholdPercent = Get-PositiveIntegerSetting -Value $env:COMPACT_CONTEXT_PERCENT -Default 15
     $reminderStepPercent = 10
 
     $stateDirectory = Join-Path $env:USERPROFILE '.claude\cache\strategic-compact'

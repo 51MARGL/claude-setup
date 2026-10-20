@@ -1,3 +1,8 @@
+try {
+    [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
+    [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+} catch {
+}
 $stdin = [Console]::In.ReadToEnd()
 $data = $stdin | ConvertFrom-Json
 
@@ -106,6 +111,16 @@ function Save-ContextSnapshot {
         New-Item -ItemType Directory -Path $snapshotDirectory -Force -ErrorAction Stop | Out-Null
     }
     $snapshotFile = Join-Path $snapshotDirectory (($SessionId -replace '[^A-Za-z0-9._-]', '_') + '.context.json')
+    if (Test-Path -LiteralPath $snapshotFile) {
+        $isFresh = (Get-Item -LiteralPath $snapshotFile).LastWriteTime -gt (Get-Date).AddMinutes(-5)
+        if ($isFresh) {
+            try {
+                $stored = Get-Content -LiteralPath $snapshotFile -Raw | ConvertFrom-Json
+                if ($null -ne $stored.usedPercentage -and [double]$stored.usedPercentage -eq $snapshot.usedPercentage) { return }
+            } catch {
+            }
+        }
+    }
     $temporaryFile = "$snapshotFile.$([guid]::NewGuid().ToString('N')).tmp"
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     try {
@@ -142,7 +157,7 @@ function Get-SessionTokenTotal {
     if (-not (Test-Path -LiteralPath $cacheDir)) {
         New-Item -ItemType Directory -Path $cacheDir -Force | Out-Null
     }
-    $cacheFile = Join-Path $cacheDir "$SessionId.json"
+    $cacheFile = Join-Path $cacheDir (($SessionId -replace '[^A-Za-z0-9._-]', '_') + '.json')
 
     $offset = [int64]0
     $total = [int64]0
@@ -153,22 +168,40 @@ function Get-SessionTokenTotal {
     $cacheExists = $false
 
     if (Test-Path -LiteralPath $cacheFile) {
-        $cache = Get-Content -LiteralPath $cacheFile -Raw | ConvertFrom-Json
-        $offset = [int64]$cache.Offset
-        $total = [int64]$cache.Total
-        if ($cache.SeenIds) {
-            foreach ($id in $cache.SeenIds) {
-                if (-not $seenIds.ContainsKey($id)) {
-                    $seenIds[$id] = $true
-                    $seenOrder.Add($id)
+        try {
+            $cache = Get-Content -LiteralPath $cacheFile -Raw | ConvertFrom-Json -ErrorAction Stop
+            $cachedOffset = [int64]$cache.Offset
+            $cachedTotal = [int64]$cache.Total
+            $offset = $cachedOffset
+            $total = $cachedTotal
+            if ($cache.SeenIds) {
+                foreach ($id in $cache.SeenIds) {
+                    if (-not $seenIds.ContainsKey($id)) {
+                        $seenIds[$id] = $true
+                        $seenOrder.Add($id)
+                    }
                 }
             }
+            $cacheExists = $true
+        } catch {
+            $offset = [int64]0
+            $total = [int64]0
+            $seenIds = @{}
+            $seenOrder.Clear()
         }
-        $cacheExists = $true
+    } else {
+        Get-ChildItem -LiteralPath $cacheDir -File |
+            Where-Object { $_.Extension -in '.json', '.tmp' -and $_.LastWriteTime -lt (Get-Date).AddDays(-7) } |
+            Remove-Item -Force -ErrorAction SilentlyContinue
     }
 
     $fileLength = (Get-Item -LiteralPath $TranscriptPath).Length
     $stateChanged = $false
+
+    if (-not $cacheExists) {
+        $offset = $fileLength
+        $total = [int64]0
+    }
 
     if ($fileLength -lt $offset) {
         $offset = [int64]0
@@ -236,7 +269,14 @@ function Get-SessionTokenTotal {
             Total   = $total
             SeenIds = @($recentIds)
         }
-        $cacheObj | ConvertTo-Json -Compress -Depth 3 | Set-Content -LiteralPath $cacheFile -Force
+        $temporaryFile = "$cacheFile.$([guid]::NewGuid().ToString('N')).tmp"
+        $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+        try {
+            [System.IO.File]::WriteAllText($temporaryFile, ($cacheObj | ConvertTo-Json -Compress -Depth 3), $utf8NoBom)
+            Move-Item -LiteralPath $temporaryFile -Destination $cacheFile -Force -ErrorAction Stop
+        } finally {
+            if (Test-Path -LiteralPath $temporaryFile) { Remove-Item -LiteralPath $temporaryFile -Force -ErrorAction SilentlyContinue }
+        }
     }
 
     return $total

@@ -3,6 +3,7 @@ name: devops
 description: Use for every Azure DevOps operation — read and change work items (bugs, tasks, user stories, PBIs), work-item fields such as state, assignee, iteration, and effort, comments, links, pull requests, reviewers and votes, build and release pipelines, build results, iterations and sprints, area paths, and WIQL queries. Also use when given a bare work-item number or a pasted Azure DevOps URL. Triggers on Azure DevOps, ADO, work item, workitem, bug, task, user story, PBI, backlog, create work item, update work item, set state, assign, remaining work, effort, estimate, real effort, MD, add comment, link, pull request, PR, create pull request, reviewer, vote, pipeline, build, queue build, release, iteration, sprint, area path, WIQL. Do NOT use for Dockerfile, compose, or Bicep files (use container-developer). Writes only the change that the prompt names. Never deletes.
 tools: PowerShell, Read, Grep, Glob
 model: haiku
+omitClaudeMd: true
 ---
 
 You are the Azure DevOps agent. You read and change data through the REST API of the server, and
@@ -162,6 +163,8 @@ Use placeholders and substitute from context. Add `$top` to cap large collection
   `remove` operation.
 - Before a write, `GET` the item and keep its `rev`. After the write, `GET` it again and compare
   the changed field with the requested value.
+- Write the text of each work item and each pull-request comment in ASD-STE100 style, as
+  `CLAUDE-TEAM.md` defines it. Why: this agent does not load `CLAUDE-TEAM.md`.
 
 # Write endpoints
 

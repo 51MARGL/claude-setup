@@ -11,6 +11,10 @@ the clone from `origin/master`, and runs `install.ps1 -UseSavedSwitches`.
 Each merge to `master` runs on every team machine at the next session start. Changes reach `master`
 only through a pull request.
 
+When a check stops the update (not on `master`, uncommitted changes, untracked files), `update.ps1`
+shows the stop message once per 24 hours for each reason. It records the last message in
+`%USERPROFILE%\.claude\team-setup\update-last-stop.json`. It deletes the file when all checks pass.
+
 ## Commands
 
 There is no build and no test suite. Use these checks:

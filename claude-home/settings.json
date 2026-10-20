@@ -3,6 +3,12 @@
     "deny": [
       "Bash(git push --force *)",
       "Bash(git push -f *)",
+      "Bash(git push --force*)",
+      "Bash(git push * --force*)",
+      "Bash(git push * -f)",
+      "Bash(git push * -f *)",
+      "Bash(git push +*)",
+      "Bash(git push * +*)",
       "Bash(git reset --hard *)",
       "Bash(rm -rf /*)",
       "Bash(sudo *)",
@@ -17,6 +23,12 @@
       "Bash(TRUNCATE TABLE *)",
       "PowerShell(git push --force *)",
       "PowerShell(git push -f *)",
+      "PowerShell(git push --force*)",
+      "PowerShell(git push * --force*)",
+      "PowerShell(git push * -f)",
+      "PowerShell(git push * -f *)",
+      "PowerShell(git push +*)",
+      "PowerShell(git push * +*)",
       "PowerShell(git reset --hard *)",
       "PowerShell(Remove-Item C:\\Windows*)",
       "PowerShell(Remove-Item HKLM:*)",
@@ -133,7 +145,7 @@
   "hooks": {
     "PostToolUse": [
       {
-        "matcher": "Agent|Task|Edit|Write",
+        "matcher": "Agent|Task",
         "hooks": [
           {
             "type": "command",
