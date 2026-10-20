@@ -87,6 +87,40 @@ if ($null -ne $ctxPct) {
     }
 }
 
+function Save-ContextSnapshot {
+    param([string]$SessionId, $ContextWindow)
+
+    if (-not $SessionId -or $null -eq $ContextWindow.used_percentage) { return }
+
+    $snapshot = @{ usedPercentage = [double]$ContextWindow.used_percentage }
+    if ($ContextWindow.context_window_size) {
+        $snapshot.totalTokens = [int64]$ContextWindow.context_window_size
+    }
+    $currentUsage = $ContextWindow.current_usage
+    if ($currentUsage) {
+        $snapshot.usedTokens = [int64]$currentUsage.input_tokens + [int64]$currentUsage.cache_creation_input_tokens + [int64]$currentUsage.cache_read_input_tokens
+    }
+
+    $snapshotDirectory = Join-Path $env:USERPROFILE '.claude\cache\strategic-compact'
+    if (-not (Test-Path -LiteralPath $snapshotDirectory)) {
+        New-Item -ItemType Directory -Path $snapshotDirectory -Force -ErrorAction Stop | Out-Null
+    }
+    $snapshotFile = Join-Path $snapshotDirectory (($SessionId -replace '[^A-Za-z0-9._-]', '_') + '.context.json')
+    $temporaryFile = "$snapshotFile.$([guid]::NewGuid().ToString('N')).tmp"
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    try {
+        [System.IO.File]::WriteAllText($temporaryFile, ($snapshot | ConvertTo-Json -Compress), $utf8NoBom)
+        Move-Item -LiteralPath $temporaryFile -Destination $snapshotFile -Force -ErrorAction Stop
+    } finally {
+        if (Test-Path -LiteralPath $temporaryFile) { Remove-Item -LiteralPath $temporaryFile -Force -ErrorAction SilentlyContinue }
+    }
+}
+
+try {
+    Save-ContextSnapshot -SessionId $data.session_id -ContextWindow $data.context_window
+} catch {
+}
+
 function Format-TokenCount {
     param([int64]$Count)
     if ($Count -lt 1000) {

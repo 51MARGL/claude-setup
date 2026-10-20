@@ -76,20 +76,38 @@ Pass `model` on every `Agent` call. Default to these, and say in one line when y
 
 | Step | Model | Why |
 |---|---|---|
-| `architect`, `planner` | `opus` | Judgement. A wrong decision gives a wrong plan |
+| `architect` | `opus` | Judgement. A wrong decision gives a wrong plan |
+| `planner` | `sonnet` when the task touches 1 project and fewer than 3 files, `opus` otherwise | A small task needs little judgement. Estimate the size from the task text and the `architect` report |
 | `pr-reviewer` (`review`, pull-request mode) | `opus` | It runs its own chain and merges the reviewer reports |
 | implementer agents, fix pass | `sonnet` | The plan already holds the decisions, so the step is execution, not judgement |
 | `tester` | `sonnet` | The test plan already names what to assert. Raise it to `opus` when its report says "Recommend `opus`", or when the tests must control concurrency or guard a published contract |
-| `code-reviewer`, `security-reviewer`, `migration-reviewer` | `opus` | A missed defect costs more than the review |
-| `style-reviewer`, `devops`, `git`, `Explore` | `haiku` | Rule checks, lookups, and searches. The agent file holds the rules, so the step needs no judgement. Raise it to `sonnet` when the report misses a rule or a file that you can see |
+| `code-reviewer`, `security-reviewer`, `migration-reviewer` | `sonnet` | The agent file holds the checks. Raise it to `opus` by the rules in "Reviewer model" |
+| `style-reviewer`, `devops`, `git`, `Explore` | `haiku` | Rule matching, lookup, and search. The agent file holds the rules, so the step needs no judgement. Raise it to `sonnet` when the report misses a rule or a file that you can see |
 | `docs-updater` | `sonnet` | It decides which document the change made wrong, and it writes new text |
 | `general-purpose`, any other helper agent | `sonnet` | The task is open, so the agent file holds no rules for it |
 
 The main session runs on `opus`. It plans, decides, and resolves questions from the agents.
 
-Raise a step to `opus` when the task is cross-repository, touches a published contract, or the
-user says the change is risky. Use `sonnet` for a review step only when the diff is under about
-50 lines and touches one file.
+Raise any other step to `opus` when one of these is true:
+
+- The task is cross-repository.
+- The task touches a published contract.
+- The user says the change is risky.
+
+#### Reviewer model
+
+- All three reviewers go to `opus` when one of these is true:
+  - The diff is over about 300 lines or over 5 files.
+  - The diff touches a published contract.
+  - The task is cross-repository.
+  - The user says the change is risky.
+- `security-reviewer` also goes to `opus` when the diff changes authentication, authorization,
+  crypto, or secret storage, when the diff changes a hook, an installer, an update script, or an MCP
+  server entry, or when the task reports a vulnerability or a leaked secret.
+- `migration-reviewer` also goes to `opus` when the migration drops or renames a column or a table,
+  changes a column type, or moves data in a table that already holds data.
+
+`orchestrate.md` and `pr-reviewer.md` hold the same text. Keep the two texts identical.
 
 ## Workflows
 
@@ -101,12 +119,8 @@ user says the change is risky. Use `sonnet` for a review step only when the diff
 
 ### feature
 
-0. `architect` — **run this by default.** These repositories are large, so placement is rarely
-   obvious from the task text. Skip it only when both conditions are true:
-   1. The task names the exact file or files.
-   2. The change touches no published package, no message contract, no route, and no schema.
-
-   When you skip it, name the two conditions in one line.
+0. `architect` — run this only when the task touches a contract, a schema, a route, a package, or
+   more than 1 project. When you skip it, say in one line that the task touches none of these.
 1. `planner` — produce the phased implementation plan.
 2. `git` — the branch step. See [Shared steps](#shared-steps).
 3. Implementer — `dotnet-developer`, `frontend-developer`, `powershell-developer`, or
@@ -119,7 +133,8 @@ user says the change is risky. Use `sonnet` for a review step only when the diff
    [The guards](#the-guards). Run them in parallel, in one message.
 7. Fix pass — see [The fix pass](#the-fix-pass).
 8. `docs-updater` — the docs step.
-9. `git` — the commit step.
+9. `tester` — the final suite run. See [The final suite run](#the-final-suite-run--tester).
+10. `git` — the commit step.
 
 ### bugfix
 
@@ -131,13 +146,14 @@ Use this workflow for a vulnerability or a leaked secret too. The security guard
 3. `tester` — write a test that reproduces the bug. Run it, and show that it fails for the reason
    in the bug report.
 4. Implementer — fix the bug. Give it the failing test as the definition of done.
-5. `tester` — the test step. Run the test from step 3 and the suite of its test project.
-6. `tester` — the browser check step. See [The browser check step](#the-browser-check-step--tester).
+5. `tester` — the test step. Run the test from step 3 and the tests that cover the change.
+6. `tester` — the browser check step. See [browser check](#the-browser-check-step--tester).
 7. The review step: `code-reviewer`, plus each reviewer that a guard adds. Tell `code-reviewer` to
    confirm the fix and to look for the same defect elsewhere.
 8. Fix pass — see [The fix pass](#the-fix-pass).
 9. `docs-updater` — the docs step.
-10. `git` — the commit step.
+10. `tester` — the final suite run. See [The final suite run](#the-final-suite-run--tester).
+11. `git` — the commit step.
 
 If the repository has no tests, `tester` reports that at step 3. Then give the implementer the
 reproduction steps from the bug report instead.
@@ -154,7 +170,8 @@ already exists, a wrong test, or a flaky test.
    `code-reviewer` to check that each new test fails when the behaviour that it guards is reverted.
 4. Fix pass — `tester` only.
 5. `docs-updater` — the docs step.
-6. `git` — the commit step.
+6. `tester` — the final suite run. See [The final suite run](#the-final-suite-run--tester).
+7. `git` — the commit step.
 
 If `tester` finds that production code is wrong, stop the chain. Print the failure, and offer the
 `bugfix` workflow.
@@ -165,15 +182,20 @@ If `tester` finds that production code is wrong, stop the chain. Print the failu
    inside one project and changes no public surface. When you skip it, say why in one line.
 1. `Explore` — map every caller and every dependency of the code to be changed. Set the breadth to `very thorough`.
 2. `git` — the branch step.
-3. `tester` — the baseline. Run the tests that cover the code from step 1, and record the counts.
-   Add no test.
+3. `tester` — the baseline. Add no test. Record two sets of counts:
+   - the counts of the tests that cover the code from step 1
+   - the counts of the full suite of each test project from the scope in [The final suite
+     run](#the-final-suite-run--tester)
 4. Implementer — make the change with no behaviour change.
-5. `tester` — the test step. Run the same tests. The counts must match the baseline from step 3.
+5. `tester` — the test step. Run the covering tests from step 3. The counts must match the
+   covering-test baseline.
 6. The review step: `style-reviewer` and `code-reviewer`, plus each reviewer that a guard adds. Run
    them in parallel, in one message.
 7. Fix pass — see [The fix pass](#the-fix-pass).
 8. `docs-updater` — the docs step.
-9. `git` — the commit step.
+9. `tester` — the final suite run. See [The final suite run](#the-final-suite-run--tester). Its
+   counts must match the full-suite baseline from step 3.
+10. `git` — the commit step.
 
 ### review
 
@@ -242,18 +264,19 @@ The task begins with a comma-separated agent list, then the description. Run the
 /orchestrate custom "Explore,dotnet-developer,code-reviewer" fix the retry loop in the client
 ```
 
-When the list names an implementer, add the four shared steps that the list does not name:
+When the list names an implementer, add the five shared steps that the list does not name:
 
 - the branch step, before the first implementer
 - the test step, after the last implementer
-- the docs step and the commit step, after the last agent in the list
+- the docs step, the final suite run, and the commit step, after the last agent in the list, in
+  that order
 
 Mark each added step as `(added)` in the printed chain. The user can remove it before step 1 starts.
 
 ## Shared steps
 
 Every workflow that changes files runs the test step, the fix pass, the branch step, the docs step,
-and the commit step. Never skip one to save time.
+the final suite run, and the commit step. Never skip one to save time.
 
 ### The guards
 
@@ -279,12 +302,13 @@ Run it after an implementer, before the review step that follows.
 1. Give it the files changed, the behaviours that the implementer report lists, and the test plan
    from `planner` when one exists.
 2. Tell it to edit test files only.
-3. Put its counts (passed, failed, skipped) in the step line.
-4. If a test fails because of production code, send the failure to the implementer, then run the
+3. Tell it to run the new tests and the tests that cover the change. It never runs the full suite.
+4. Put its counts (passed, failed, skipped) in the step line.
+5. If a test fails because of production code, send the failure to the implementer, then run the
    test step again. This counts as one fix pass.
 
-If `planner` or `tester` reported that the repository has no tests, skip each later test step.
-Say so in one line, and name the build as the only check in the final report.
+If `planner` or `tester` reported that the repository has no tests, skip each later test step and
+the final suite run. Say so in one line, and name the build as the only check in the final report.
 
 Why: the implementers do not write or run tests. Without this step, nothing in the chain runs
 them.
@@ -293,7 +317,7 @@ them.
 
 Run it after the test step, before the review step. It runs only in `feature` and `bugfix`.
 
-It runs only when both conditions are true:
+It runs only when all three conditions are true:
 
 - The diff after the test step touches a file of one of these types, outside the test folders:
   - `.tsx`
@@ -304,6 +328,8 @@ It runs only when both conditions are true:
   - `.less`
   - `.html`
 - The repository runs as a standalone app with a dev server.
+- The acceptance criteria name something visible on the page. In `bugfix`, the reproduction steps
+  name something visible on the page.
 
 Decide from the diff, not from the plan.
 
@@ -331,13 +357,34 @@ A review step can return two kinds of findings. Route each finding to its owner:
 - a missing test, or a defect in a test: `tester`
 
 Run the implementer first when both have findings. After the implementer changed code, run the test
-step again. Also run the browser check step again when that step ran before.
+step again, with only the relevant tests: the failed tests, the new tests, and the tests that cover
+the fixed code. Never run the full suite in a fix pass. Also run the browser check step again when
+that step ran before.
 
 When `security-reviewer` or `migration-reviewer` returned a blocking finding, run that reviewer
 again after the fix pass. Tell it to confirm that each blocking finding is closed, and that the fix
 opened nothing new.
 
 Skip the fix pass when the review step returned no blocking finding. Say so in the step line.
+
+### The final suite run — `tester`
+
+Run it once, at the end of the chain. Run it after the review step, the fix pass, and the docs
+step, and before the commit step. It runs also when no fix pass ran.
+
+1. Tell `tester` to run the full suite of each test project that the diff touches, and each test
+   project that tests a project that the diff touches.
+2. Tell it to edit no file.
+3. Put its counts (passed, failed, skipped) in the step line.
+4. If the suite fails because of production code, send the failure to the implementer. Then run the
+   final suite run again. This counts as one fix pass.
+5. In the `test` workflow, a failure caused by production code stops the chain. Print the failure,
+   and offer the `bugfix` workflow.
+
+If `planner` or `tester` reported that the repository has no tests, skip this step.
+
+Why: the test step and the fix pass run only the relevant tests. This step finds a break in a
+test that no earlier step ran.
 
 ### The branch step — `git`
 
@@ -482,7 +529,7 @@ Never ask for a compact at these points. The next step needs the context that a 
 Ask for a compact at a gate when one of these is true. Otherwise continue and say nothing.
 
 1. The `[StrategicCompact]` hook printed a message since the last gate. The hook reads the context
-   size of this session from the transcript. It prints a message when the context reaches 15% of
+   size of this session from the status line file, or from the transcript when that file is old. It prints a message when the context reaches 10% of
    the window, and again at each further 10%.
 2. The next stage works on a different area of the code.
 
@@ -516,6 +563,8 @@ Stop the chain and report, when:
 - `tester` cannot reproduce the bug in the `bugfix` workflow. Do not fix a bug that no test or
   reproduction shows.
 - The test counts after a refactor do not match the baseline, and the fix pass already ran once.
+  This applies to the covering-test counts of the test step and to the full-suite counts of the
+  final suite run. Each set has its own baseline from step 3.
 - The browser check fails again after one fix pass.
 - The user interrupts.
 - `architect` returned two viable options with a real trade-off. The choice is the user's. Print
@@ -564,7 +613,12 @@ After the report, check gate C. End with one next action the user can do in unde
 
 - Run independent agents in parallel, in one message. Never run two implementers on the same file
   at the same time. Never run `tester` and an implementer at the same time.
-- Never skip a review step, the test step, the docs step, or the commit step to save time.
+- Never skip one of these steps to save time:
+  - the review step
+  - the test step
+  - the docs step
+  - the final suite run
+  - the commit step
 - Never report a step as done when its agent reported a failure.
 - Keep every fact from an agent's report: a path, a number, a caveat.
 - Effort is session-wide. You cannot set it per step. When the chain needs more than the session

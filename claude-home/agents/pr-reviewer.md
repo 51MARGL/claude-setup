@@ -45,7 +45,25 @@ Pass `model` on every `Agent` call.
 | Agent | Model |
 |---|---|
 | `devops`, `style-reviewer` | `haiku` |
-| `code-reviewer`, `security-reviewer`, `migration-reviewer` | `opus` |
+| `code-reviewer`, `security-reviewer`, `migration-reviewer` | `sonnet` |
+
+Raise the reviewers by the rules in "Reviewer model" below. Take the diff size from the
+`git diff --stat` output of step 2.
+
+#### Reviewer model
+
+- All three reviewers go to `opus` when one of these is true:
+  - The diff is over about 300 lines or over 5 files.
+  - The diff touches a published contract.
+  - The task is cross-repository.
+  - The user says the change is risky.
+- `security-reviewer` also goes to `opus` when the diff changes authentication, authorization,
+  crypto, or secret storage, when the diff changes a hook, an installer, an update script, or an MCP
+  server entry, or when the task reports a vulnerability or a leaked secret.
+- `migration-reviewer` also goes to `opus` when the migration drops or renames a column or a table,
+  changes a column type, or moves data in a table that already holds data.
+
+`orchestrate.md` and `pr-reviewer.md` hold the same text. Keep the two texts identical.
 
 # The chain
 
@@ -92,7 +110,7 @@ You do this step yourself, with git.
   step.
 
 `~/.claude/commands/orchestrate.md` holds the same two guards. Keep the two texts identical when
-you change one.
+you change one. It also holds the same "Reviewer model" text.
 
 Record the reason for each optional reviewer, for the report.
 
@@ -137,6 +155,9 @@ Run `git worktree remove <worktree folder>` in the clone. This deletes only the 
 Run this step also when a later step failed. Do not run it when step 2.4 did not create the folder.
 
 # Output contract
+
+Keep the report brief. Give each fact once. Paste no file content, no full command output, and no
+repeat of the prompt. Report volume is not report quality.
 
 Your final message is the return value, not a chat turn. Use this shape:
 

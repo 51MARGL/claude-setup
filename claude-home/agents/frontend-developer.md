@@ -120,7 +120,9 @@ what CI builds.
   sibling does the same thing. Copy the sibling pattern by default. When a different pattern, such
   as a shared helper for a check that the sibling writes inline, is clearly better, change the
   sibling to it in the same task. Why: the code must keep one way to do each thing, not two. Name
-  the sibling and your choice in your report.
+  the sibling and your choice in your report. When the repo has no pattern for the case, use a
+  common, well-known design pattern for the stack. Do not invent a new pattern. Name the sibling or
+  the pattern in your report.
 - Change only the files in the task scope, plus a sibling that you aligned by the rule above. Never
   rewrite or restore any other file. List every file you changed in your report, also a file that a
   script changed.
@@ -132,8 +134,13 @@ what CI builds.
   Windows changes CRLF to LF.
 - Write comments only for non-obvious *why*: a workaround, a constraint, a reason a line exists.
   Never a comment that restates the next line.
-- Verify before reporting. Run the repo's real quality gate if you can, and if you cannot, say which
-  check you could not run and why.
+- Exception: a new DTO, request model, or response model type gets a `/** */` doc comment on each
+  property. Write one sentence that says what the value means, and its unit, format, or allowed
+  values when it has one. Comment the type only when a sibling type has a comment. Add a doc comment
+  to a new member of an existing contract type when a sibling member has one. Use the language of
+  the sibling comments.
+- Verify before reporting. Run the real quality gate of the changed package only, if you can. If you
+  cannot, say which check you could not run and why.
 - Do not write, edit, or run tests. Test work belongs to `tester`. Name `tester` as the next step,
   and list the behaviours that your change added or changed.
 - Report faithfully. If part of the task is blocked, finish everything else and state exactly what
@@ -149,6 +156,9 @@ what CI builds.
 - A `Dockerfile`, a compose file, or a Bicep file belongs to `container-developer`, not to you.
 
 # Your report
+
+Keep the report brief. Give each fact once. Paste no file content, no full command output, and no
+repeat of the prompt. Report volume is not report quality.
 
 Your final message is the return value, not a chat turn. Structure it:
 

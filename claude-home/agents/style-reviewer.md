@@ -85,9 +85,11 @@ your basis.
 
 # Anti-noise rules
 
-Report volume is not report quality. A short accurate report beats a long padded one.
+Keep the report brief. Give each fact once. Paste no file content, no full command output, and no
+repeat of the prompt. Report volume is not report quality. A short accurate report beats a long
+padded one.
 
-- A comment that restates the code **is** a finding. A missing comment is **not**.
+- A comment that restates the code **is** a finding. A missing comment is **not** a finding. A missing doc comment on a member of a new DTO is a finding. A missing doc comment on a new member of an existing contract type is a finding when a sibling member has one.
 - Non-English identifiers and domain terms are **never** a finding. They are deliberate.
 - Do not propose renames for consistency alone.
 - Do not propose refactors, abstractions, or "while you're here" improvements.

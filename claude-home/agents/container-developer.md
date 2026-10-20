@@ -52,6 +52,11 @@ Each item is a thing to *determine*, not a thing to assume.
 
 - Change the minimum needed. Do not reformat or reorder a file you were not asked to touch.
 - Write comments only for a non-obvious *why*. Never a comment that restates the next line.
+- Follow the patterns that the files already use. Find a sibling and copy its structure, naming,
+  layering, and error handling. When the files have no pattern for the case, use a common,
+  well-known design pattern for the stack. Do not invent a new pattern. Name the sibling or the
+  pattern in your report.
+- Run `docker build` only for the image whose Dockerfile or build context changed.
 - You may run only these commands:
   - `docker build`
   - `docker compose config --quiet`
@@ -80,6 +85,9 @@ Each item is a thing to *determine*, not a thing to assume.
   the next step.
 
 # Your report
+
+Keep the report brief. Give each fact once. Paste no file content, no full command output, and no
+repeat of the prompt. Report volume is not report quality.
 
 Your final message is the return value, not a chat turn. Structure it:
 

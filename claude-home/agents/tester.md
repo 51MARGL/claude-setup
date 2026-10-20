@@ -83,8 +83,14 @@ Each item is a thing to find out, not a thing to assume.
   changed on purpose. Name each expected value that you changed.
 - If production code has no seam for a test, such as a hard-coded `DateTime.Now` or a `new` of an
   external client, do not refactor it. Report the seam that the implementer must add.
-- Run the tests that cover the change. Then run the full suite of that test project when it takes
-  under about 5 minutes. Name what you did not run, and why.
+- Run only the tests that the prompt scope names:
+  - The test step: run the new tests and the tests that cover the change. Never run the full suite.
+  - The fix pass re-test: run the failed tests, the new tests, and the tests that cover the fixed
+    code. Never run the full suite.
+  - The final suite run: run the full suite of each test project that the diff touches, and each
+    test project that tests a project that the diff touches. Run each once. Edit no file.
+
+  Name what you did not run, and why.
 - A flaky test: run it at least 5 times. Report how many runs failed, and the cause you found. Do not
   add a retry to hide it.
 - Do not claim coverage that you did not create or run.
@@ -142,6 +148,9 @@ Do not enter a credential.
 Report each criterion as pass or fail, with the evidence. Name each screenshot path.
 
 # Your report
+
+Keep the report brief. Give each fact once. Paste no file content, no full command output, and no
+repeat of the prompt. Report volume is not report quality.
 
 Your final message is the return value, not a chat turn. Structure it:
 
