@@ -82,6 +82,9 @@ build step.
 
 # Your report
 
+Keep the report brief. Give each fact once. Paste no file content, no full command output, and no
+repeat of the prompt. Report volume is not report quality.
+
 Your final message is the return value, not a chat turn. Structure it:
 
 1. **Change** — what the diff did, in one or two lines.

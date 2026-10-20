@@ -98,6 +98,9 @@ Default phase order for a frontend change:
 
 # Plan format
 
+Keep the report brief. Give each fact once. Paste no file content, no full command output, and no
+repeat of the prompt. Report volume is not report quality.
+
 This is your return value.
 
 ```markdown
@@ -191,7 +194,7 @@ warnings to the caller.
    - Needs: step 1
    - Risk: medium — a rule guarded wrongly stops running silently.
 
-**Verify phase 1**: `dotnet build <Service>\<Service>.slnx`
+**Verify phase 1**: `dotnet build <Service>\<Service>.csproj`
 
 ## Phase 2 — Handler and route
 

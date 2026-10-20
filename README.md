@@ -132,12 +132,12 @@ The workflows:
 | Workflow | Chain |
 |---|---|
 | `design` | `architect`, then it stops and waits for your decision |
-| `feature` | `architect` → `planner` → `git` branch → implementer → `tester` → `tester` browser check → `style-reviewer` + `code-reviewer` (+ guards) → fix pass → `docs-updater` → `git` commit. Use it for schema changes and migrations too |
-| `bugfix` | `Explore` → `git` branch → `tester` writes a failing test → implementer → `tester` → `tester` browser check → `code-reviewer` (+ guards) → fix pass → `docs-updater` → `git` commit. Use it for a vulnerability or a leaked secret too |
-| `test` | `git` branch → `tester` → `code-reviewer` + `style-reviewer` → fix pass by `tester` → `docs-updater` → `git` commit. For test work with no production change |
-| `refactor` | `architect` → `Explore` → `git` branch → `tester` baseline → implementer → `tester` → `style-reviewer` + `code-reviewer` (+ guards) → fix pass → `docs-updater` → `git` commit |
+| `feature` | `architect` (only when the task touches a contract, a schema, a route, a package, or more than 1 project) → `planner` → `git` branch → implementer → `tester` → `tester` browser check → `style-reviewer` + `code-reviewer` (+ guards) → fix pass → `docs-updater` → `tester` final suite run → `git` commit. Use it for schema changes and migrations too |
+| `bugfix` | `Explore` → `git` branch → `tester` writes a failing test → implementer → `tester` → `tester` browser check → `code-reviewer` (+ guards) → fix pass → `docs-updater` → `tester` final suite run → `git` commit. Use it for a vulnerability or a leaked secret too |
+| `test` | `git` branch → `tester` → `code-reviewer` + `style-reviewer` → fix pass by `tester` → `docs-updater` → `tester` final suite run → `git` commit. For test work with no production change |
+| `refactor` | `architect` → `Explore` → `git` branch → `tester` baseline → implementer → `tester` → `style-reviewer` + `code-reviewer` (+ guards) → fix pass → `docs-updater` → `tester` final suite run → `git` commit |
 | `review` | local diff, or a pull request through `pr-reviewer`, with the guards in both modes. Local mode also runs `docs-updater` in report-only mode |
-| `custom` | your own comma-separated agent list, for example `/orchestrate custom "Explore,dotnet-developer,code-reviewer" <task>`. When the list names an implementer, `/orchestrate` adds the `git`, `tester`, and `docs-updater` steps that the list does not name |
+| `custom` | your own comma-separated agent list, for example `/orchestrate custom "Explore,dotnet-developer,code-reviewer" <task>`. When the list names an implementer, `/orchestrate` adds the `git`, `tester`, `docs-updater`, and final suite run steps that the list does not name |
 
 Two guards add `security-reviewer` and `migration-reviewer` to the review step. The conditions are
 in `claude-home\commands\orchestrate.md`, section "The guards".
@@ -146,10 +146,30 @@ The implementer is `dotnet-developer`, `frontend-developer`, `powershell-develop
 `container-developer`, chosen by the files that the plan touches. The implementers do not write or
 run tests. `tester` does all test work, and edits test files only.
 
-The browser check step runs in `feature` and `bugfix` only. It runs when the diff touches a UI file
-(`.tsx`, `.jsx`, `.css`, `.scss`, `.sass`, `.less`, or `.html`) outside the test folders, and the
-repository runs as a standalone app with a dev server. `tester` then drives a browser through the
-`playwright` MCP server and edits no file.
+The test step and the fix pass re-test run only the relevant tests. The final suite run runs the
+full suite of each test project that the diff touches, and each test project that tests a project
+that the diff touches. It runs each suite once, after the docs step and before the commit step.
+
+The browser check step runs in `feature` and `bugfix` only. It runs when all three conditions are
+true:
+
+- The diff touches a UI file outside the test folders.
+- The repository runs as a standalone app with a dev server.
+- The acceptance criteria, or the reproduction steps in `bugfix`, name something visible on the
+  page.
+
+A UI file has one of these file types:
+
+- `.tsx`
+- `.jsx`
+- `.css`
+- `.scss`
+- `.sass`
+- `.less`
+- `.html`
+
+In the browser check step, `tester` drives a browser through the `playwright` MCP server. `tester`
+edits no file.
 
 The `git` branch step creates a work branch only when you are on the default branch. The `git`
 commit step commits only when you asked for a commit. Otherwise it writes the commit message and
@@ -247,12 +267,12 @@ team reviews it there, and each member gets it on the next automatic update.
 | `update.ps1` | The automatic update. Claude Code runs it at session start. See "Automatic updates". |
 | `claude-home\CLAUDE-TEAM.md` | Team global instructions. The installer copies them to `%USERPROFILE%\.claude\CLAUDE-TEAM.md`. They include one person's AuDHD and writing rules (ASD-STE100). Read them before you install them. |
 | `claude-home\settings.json` | Permission deny and ask lists, the hooks, the statusline, the model, and the effort level. |
-| `claude-home\agents\` | 16 agents: architect, planner, dotnet-developer, frontend-developer, powershell-developer, container-developer, tester, code-reviewer, style-reviewer, security-reviewer, migration-reviewer, docs-updater, devops, pr-reviewer, git, Explore. `architect`, `planner`, `pr-reviewer`, `code-reviewer`, `security-reviewer`, and `migration-reviewer` run on opus. The implementers, `tester`, and `docs-updater` run on sonnet. `devops`, `style-reviewer`, and `git` run on haiku. `Explore` runs on haiku too. It overrides the built-in `Explore` agent, so every call runs on haiku. `/orchestrate` raises `tester` to opus for concurrency tests, for published contracts, or when `tester` asks for it. `/orchestrate` sets the model of each agent that it calls. When you call any other agent yourself, name the model in your request. |
+| `claude-home\agents\` | 16 agents: architect, planner, dotnet-developer, frontend-developer, powershell-developer, container-developer, tester, code-reviewer, style-reviewer, security-reviewer, migration-reviewer, docs-updater, devops, pr-reviewer, git, Explore. `architect` and `pr-reviewer` run on opus. `planner` runs on sonnet when the task touches 1 project and fewer than 3 files, and on opus otherwise. `code-reviewer`, `security-reviewer`, and `migration-reviewer` run on sonnet, and `/orchestrate` raises them to opus by the "Reviewer model" rules in `orchestrate.md`. The implementers, `tester`, and `docs-updater` run on sonnet. `devops`, `style-reviewer`, and `git` run on haiku. `Explore` runs on haiku too. It overrides the built-in `Explore` agent, so haiku is the default model of that agent. A caller can still pass another `model` value in the `Agent` call, and that value wins. `/orchestrate` raises `tester` to opus for concurrency tests, for published contracts, or when `tester` asks for it. `/orchestrate` sets the model of each agent that it calls. When you call any other agent yourself, name the model in your request. |
 | `claude-home\commands\orchestrate.md` | The `/orchestrate` command. See the section above. |
 | `claude-home\output-styles\audhd.md` | The AuDHD output style. The installer selects it for you when `settings.json` has no other style. You can also select it with `/config` → Output style. |
-| `claude-home\skills\strategic-compact\` | The skill and the `PostToolUse` hook that reads the context size from the transcript and suggests `/compact` at 15% of the window, then at each further 10%. Set `COMPACT_CONTEXT_PERCENT` and `COMPACT_CONTEXT_WINDOW` to change the values. |
+| `claude-home\skills\strategic-compact\` | The skill and the `UserPromptSubmit` and `PostToolUse` hooks that suggest `/compact` at 10% of the window, then at each further 10%. The hooks read the context size from the file that `statusline.ps1` writes. When that file is missing or older than 10 minutes, they read the transcript. Set `COMPACT_CONTEXT_PERCENT` and `COMPACT_CONTEXT_WINDOW` to change the values. |
 | `claude-home\hooks\notify.ps1` | The hook that shows a Windows toast when Claude needs you. See the next section. |
-| `claude-home\statusline.ps1` | The statusline script. |
+| `claude-home\statusline.ps1` | The statusline script. It also writes the context size of the session for the strategic-compact hooks. |
 | `mcp\servers.json` | User-scope MCP servers: `microsoft-learn` (http), `playwright` (stdio, `cmd /c npx -y @playwright/mcp@latest --headless --isolated --browser msedge --output-dir %TEMP%\playwright-mcp`), and `context7` (http, no key). See "MCP servers". |
 
 ## MCP servers

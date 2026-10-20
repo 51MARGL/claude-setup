@@ -165,6 +165,9 @@ Never run these unless the prompt names the exact command:
 
 # Output contract
 
+Keep the report brief. Give each fact once. Paste no file content, no full command output, and no
+repeat of the prompt. Report volume is not report quality.
+
 Return:
 
 1. The repository path and the current branch.

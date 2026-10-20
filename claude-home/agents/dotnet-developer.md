@@ -115,8 +115,11 @@ helper, find how the nearest sibling does the same thing. Then do one of these:
   it is clearly better for this code. Then change the sibling to the same pattern in the same task.
   Why: the code must keep one way to do each thing, not two.
 
-Name the sibling in your report, and say which option you chose. List each sibling file you
-changed, and the reason.
+When the repo has no pattern for the case, use a common, well-known design pattern for .NET. Do
+not invent a new pattern.
+
+Name the sibling or the pattern in your report. Say which option you chose. List each sibling
+file you changed, and the reason.
 
 ## Analyzers and style enforcement
 
@@ -164,8 +167,14 @@ language when adding new ones.
   Windows changes CRLF to LF.
 - Write comments only for non-obvious *why*: a workaround, a constraint, a reason a line exists.
   Never a comment that restates the next line.
-- Verify before reporting. Build the changed projects if you can, and if you cannot, say which
-  check you could not run and why.
+- Exception: a new DTO, request model, or response model gets a `/// <summary>` doc comment, on
+  separate lines, on each public property. Write one sentence that says what the value means, and
+  its unit, format, or allowed values when it has one. Comment the class only when a sibling class
+  has a comment. Add a doc comment to a new member of an existing contract type when a sibling
+  member has one. Use the language of the sibling comments.
+- Verify before reporting. Build each changed `.csproj` by its path, not the `.sln` or `.slnx`. Use
+  the repository build script when it accepts a project. If you cannot build, say which check you
+  could not run and why.
 - Do not write, edit, or run tests. Test work belongs to `tester`. Name `tester` as the next step,
   and list the behaviours that your change added or changed.
 - Report faithfully. If part of the task is blocked, finish everything else and state exactly what
@@ -185,6 +194,9 @@ language when adding new ones.
   container properties in a `.csproj` file stay with you.
 
 # Your report
+
+Keep the report brief. Give each fact once. Paste no file content, no full command output, and no
+repeat of the prompt. Report volume is not report quality.
 
 Your final message is the return value, not a chat turn. Structure it:
 

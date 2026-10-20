@@ -58,6 +58,20 @@ function Get-LastContextTokenCount {
     }
 }
 
+function Get-StatusLineSnapshot {
+    param([string]$SnapshotFile, [int]$MaximumAgeMinutes)
+
+    if (-not (Test-Path -LiteralPath $SnapshotFile)) { return $null }
+    if ((Get-Item -LiteralPath $SnapshotFile).LastWriteTime -lt (Get-Date).AddMinutes(-$MaximumAgeMinutes)) { return $null }
+    try {
+        $snapshot = Get-Content -LiteralPath $SnapshotFile -Raw | ConvertFrom-Json
+    } catch {
+        return $null
+    }
+    if ($null -eq $snapshot.usedPercentage) { return $null }
+    return $snapshot
+}
+
 try {
     [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
     $payload = [Console]::In.ReadToEnd() | ConvertFrom-Json
@@ -67,7 +81,7 @@ try {
     if (-not $sessionId) { exit 0 }
 
     $windowTokens = Get-PositiveIntegerSetting -Value $env:COMPACT_CONTEXT_WINDOW -Default 1000000
-    $thresholdPercent = Get-PositiveIntegerSetting -Value $env:COMPACT_CONTEXT_PERCENT -Default 15
+    $thresholdPercent = Get-PositiveIntegerSetting -Value $env:COMPACT_CONTEXT_PERCENT -Default 10
     $reminderStepPercent = 10
 
     $stateDirectory = Join-Path $env:USERPROFILE '.claude\cache\strategic-compact'
@@ -76,17 +90,30 @@ try {
     }
 
     Get-ChildItem -LiteralPath $stateDirectory -File |
-        Where-Object { $_.Extension -in '.json', '.count' -and $_.LastWriteTime -lt (Get-Date).AddDays(-7) } |
+        Where-Object { $_.Extension -in '.json', '.count', '.tmp' -and $_.LastWriteTime -lt (Get-Date).AddDays(-7) } |
         Remove-Item -Force -ErrorAction SilentlyContinue
     Get-ChildItem -LiteralPath $stateDirectory -Filter '*.count' -File |
         Remove-Item -Force -ErrorAction SilentlyContinue
 
-    $contextTokens = Get-LastContextTokenCount -TranscriptPath $payload.transcript_path
-    if ($contextTokens -le 0) { exit 0 }
+    $safeSessionId = $sessionId -replace '[^A-Za-z0-9._-]', '_'
+    $snapshot = Get-StatusLineSnapshot -SnapshotFile (Join-Path $stateDirectory ($safeSessionId + '.context.json')) -MaximumAgeMinutes 10
 
-    $percent = [int][Math]::Floor($contextTokens * 100 / $windowTokens)
+    $contextTokens = $null
+    $reportedWindowTokens = $null
+    if ($snapshot) {
+        $percent = [int][Math]::Floor([double]$snapshot.usedPercentage)
+        if ($snapshot.usedTokens -and $snapshot.totalTokens) {
+            $contextTokens = [int64]$snapshot.usedTokens
+            $reportedWindowTokens = [int64]$snapshot.totalTokens
+        }
+    } else {
+        $contextTokens = Get-LastContextTokenCount -TranscriptPath $payload.transcript_path
+        if ($contextTokens -le 0) { exit 0 }
+        $percent = [int][Math]::Floor($contextTokens * 100 / $windowTokens)
+        $reportedWindowTokens = $windowTokens
+    }
 
-    $stateFile = Join-Path $stateDirectory (($sessionId -replace '[^A-Za-z0-9._-]', '_') + '.json')
+    $stateFile = Join-Path $stateDirectory ($safeSessionId + '.json')
     $lastReportedLevel = -1
     if (Test-Path -LiteralPath $stateFile) {
         try {
@@ -112,13 +139,18 @@ try {
     [System.IO.File]::WriteAllText($temporaryStateFile, (@{ lastReportedLevel = $currentLevel } | ConvertTo-Json -Compress), $utf8NoBom)
     Move-Item -LiteralPath $temporaryStateFile -Destination $stateFile -Force
 
-    $contextThousands = [Math]::Round($contextTokens / 1000)
-    $windowThousands = [Math]::Round($windowTokens / 1000)
-    $message = "[StrategicCompact] Context is at $percent% (${contextThousands}k of ${windowThousands}k tokens). At the next compact gate, ask the user to run /compact."
+    $tokenDetail = ''
+    if ($null -ne $contextTokens -and $null -ne $reportedWindowTokens) {
+        $contextThousands = [Math]::Round($contextTokens / 1000)
+        $windowThousands = [Math]::Round($reportedWindowTokens / 1000)
+        $tokenDetail = " (${contextThousands}k of ${windowThousands}k tokens)"
+    }
+    $message = "[StrategicCompact] Context is at $percent%$tokenDetail. Inside an agent chain, ask the user to run /compact at the next compact gate. Outside an agent chain, ask the user to run /compact at the end of the current answer."
+    $hookEventName = if ([string]$payload.hook_event_name -eq 'UserPromptSubmit') { 'UserPromptSubmit' } else { 'PostToolUse' }
     @{
         systemMessage      = $message
         suppressOutput     = $true
-        hookSpecificOutput = @{ hookEventName = 'PostToolUse'; additionalContext = $message }
+        hookSpecificOutput = @{ hookEventName = $hookEventName; additionalContext = $message }
     } | ConvertTo-Json -Compress -Depth 3
 } catch {
     exit 0

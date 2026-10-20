@@ -70,11 +70,23 @@ Several files hold the same fact. When you change one, change the others in the 
    rule are in several agent files (`dotnet-developer`, `frontend-developer`,
    `powershell-developer`, `container-developer`, `tester`, `docs-updater`).
 5. **The workflow chains**: `orchestrate.md` and the "Use `/orchestrate`" table in `README.md`.
+6. **The compact threshold**: the percent in `README.md` (strategic-compact row),
+   `claude-home\commands\orchestrate.md` (compact gates),
+   `claude-home\skills\strategic-compact\SKILL.md`, and the `-Default` value in
+   `suggest-compact.ps1`.
+7. **The design-pattern rule and the report brevity rule**: the design-pattern rule is in
+   `dotnet-developer`, `frontend-developer`, `powershell-developer`, and `container-developer`. The
+   "Keep the report brief" text is in the report section of every agent file.
+8. **The DTO doc-comment rule**: "Code style" item 6 in `claude-home\CLAUDE-TEAM.md`,
+   `dotnet-developer.md`, `frontend-developer.md`, and `style-reviewer.md`.
+9. **The test-run scopes**: `orchestrate.md` (the test step, the fix pass, and the final suite run),
+   `tester.md`, and `README.md`.
 
 ## Writing rules for this repository
 
 - Write agent files, commands, `README.md`, and commit messages in ASD-STE100 style, as
-  `claude-home\CLAUDE-TEAM.md` defines it.
+  `claude-home\CLAUDE-TEAM.md` defines it. The full definition is in
+  `claude-home\output-styles\audhd.md`. `CLAUDE-TEAM.md` holds the short version.
 - Keep CRLF line endings. The repository has no `.editorconfig`. On Windows, `sed -i` in Git Bash
   changes CRLF to LF, so use the Edit tool.
 - An agent file starts with frontmatter: `name`, `description` (with the trigger words), `tools`

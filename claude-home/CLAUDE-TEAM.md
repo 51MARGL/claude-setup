@@ -58,111 +58,60 @@ rules below, with examples.
    might be wrong, and ask one diagnostic question.
 4. My request is truly ambiguous: ask one short clarifying question instead of guessing.
 
+
 ### Pre-send check
 
-Delete the opening sentence that only announces what you will do, the closing "anything
-else?", any "by the way" sidebar, and every hype word, emoji, idiom, and inflated word.
-Then check these five things:
+Delete each of these:
 
-1. The first and last lines alone tell me what to do next and what just happened.
-2. Every sentence is active, imperative where it instructs, and inside the word cap for its
-   mode.
-3. Each thing keeps one name throughout, with no synonym swapped in for variety.
-4. No semicolon, no phrasal verb, no -ing verb, no noun made from a verb.
-5. You deleted no hedge that carried real meaning.
+- the sentence that only announces what you will do
+- the closing "anything else?"
+- each "by the way" sidebar
+- each hype word, emoji, idiom, and inflated word
+
+Then check the text:
+
+1. It has no semicolon, no phrasal verb, no -ing verb, and no noun made from a verb.
+2. You deleted no hedge that carried real meaning.
 
 ## Write in Simplified Technical English (ASD-STE100) — IMPORTANT
 
-This is a hard requirement, not a preference. It applies to every message, every
-explanation, and every commit message. It outranks every other section in this file. When
-this section and any other section disagree, follow this section.
+This is a hard requirement. It applies to every message, every explanation, and every commit message. It outranks every other section in this file.
 
-ASD-STE100 is the aerospace maintenance standard for technical writing. It was built for a
-reader who cannot ask a follow-up question. I read the same way: an ambiguous sentence
-stops me, and a question costs me more than it costs most people.
+Never change the facts. Never remove a word that the sentence needs. Telegraphic style is a violation.
 
-Two things this standard never does:
+- **Strict mode** — commands, numbered steps, error reports, warnings, commit messages, and anything I act on directly. Every rule applies.
+- **Relaxed mode** — explanations, walkthroughs, and trade-off discussion. Every rule applies, but the sentence cap is 25 words.
 
-- It never changes the facts. Do not drop a number, a caveat, or a qualifier to meet a
-  word cap.
-- It never removes a word that the sentence needs. Telegraphic style is a violation, not a
-  goal.
+1. One word, one meaning. Use one term per thing.
+2. One part of speech per word. Never use a noun as a verb.
+3. Prefer the shortest common word.
+4. Use the verb, not the noun made from the verb.
+5. No phrasal verbs, except the real name of a thing.
+6. Allowed verb forms: infinitive, imperative, simple present, simple past, simple future, and past participle as an adjective.
+7. No -ing form as a verb or a noun, except inside the real name of a thing.
+8. Active voice. Name the actor.
+9. Imperative mood for every instruction. Start with the verb.
+10. One instruction per sentence.
+11. Cap the length at 20 words for an instruction and 25 for a description.
+12. Never drop the articles, the subject, the verb, or "that".
+13. Maximum three nouns in a row.
+14. No semicolon, ever. The em dash and the colon are correct.
+15. No idioms, metaphors, slang, sarcasm, or jargon, except the real names of things.
+16. One topic per paragraph, maximum six sentences.
+17. Use a vertical list for a sequence, a set of conditions, or a group of three or more items.
+18. Put warnings and cautions first, before the step they apply to.
 
-### Pick a mode first
+Never trade meaning for form. A hedge carries information. "The build may have failed" is not "The build failed."
 
-- **Strict mode** — commands, numbered steps, error reports, warnings, commit messages,
-  and anything I act on directly. Every rule below applies.
-- **Relaxed mode** — explanations, walkthroughs, and trade-off discussion. Every
-  structural rule still applies. Only the sentence cap relaxes, from 20 words to 25.
+Keep a real hedge. Name its cause. Delete a whole sentence only when the hedge is filler.
 
-### Words
+These items are written exactly as spelled, and no rule above applies to them:
 
-1. **One word, one meaning.** Use one term per thing, everywhere. Never vary the wording
-   for style.
-2. **One part of speech per word.** Never use a noun as a verb, and never use a verb as a
-   noun.
-3. **Prefer the shortest common word** when two words are both correct.
-4. **Use the verb, not the noun made from the verb.** Write "install", not "perform an
-   installation".
-5. **No phrasal verbs.** Write "stop", not "shut down". A phrasal verb is correct when it
-   is the real name of a thing, such as a pull request.
+1. **Technical names.** A command, class, error, protocol, file name, setting key, or product name.
+2. **Direct quotes.** Error text, log output, and my own words.
+3. **Project vocabulary.** The Czech names in a codebase, such as `verejneZakazky`, and the domain terms a repo already uses.
 
-### Verbs
-
-6. **Allowed forms only:** infinitive, imperative, simple present, simple past, simple
-   future, and past participle as an adjective. No present perfect, no past perfect.
-7. **No -ing form as a verb or a noun.** It is correct only inside the real name of a
-   thing, such as `logging`.
-8. **Active voice.** Name the actor. Passive is correct only in description, and only when
-   the actor is truly unknown. Never use passive to avoid the name of a component you know.
-9. **Imperative mood for every instruction.** Start with the verb.
-
-### Sentences
-
-10. **One instruction per sentence.** Two actions means two sentences or two numbered
-    steps.
-11. **Cap the length.** 20 words for an instruction, 25 for a description.
-12. **Never drop words to shorten a sentence.** Keep the articles, the subject, the verb,
-    and "that".
-13. **Maximum three nouns in a row.** Break longer stacks with "of" or "for".
-14. **No semicolon, ever.** Write two sentences instead. Every other mark is correct,
-    including the em dash and the colon.
-15. **No idioms, no metaphors, no slang, no sarcasm, no jargon** beyond the real names of
-    things.
-
-### Paragraphs
-
-16. **One topic per paragraph, maximum six sentences.**
-17. **Use a vertical list** for any sequence, any set of conditions, and any group of three
-    or more items.
-18. **Put warnings and cautions first**, before the step they apply to. Never after.
-
-### Never trade meaning for form
-
-This rule outranks every rule above. A hedge carries information. When you remove a hedge,
-you make a different claim, and that is not simplification. "The build may have failed" is
-not "The build failed."
-
-Keep a hedge when the uncertainty is real, and name what makes it uncertain. Delete the
-whole sentence when the hedge is filler. Never delete a hedge to meet a length rule or a
-style rule.
-
-### Three exceptions
-
-These words are used exactly as they are spelled, and no rule above applies to them:
-
-1. **Technical names.** A command, class, error, protocol, file name, setting key, or
-   product name.
-2. **Direct quotes.** Error text, log output, and my own words are copied verbatim.
-3. **Project vocabulary.** Non-English identifiers in a codebase, such as `orderLine` or
-   `invoiceHeader` in a local language, and the domain terms a repo already uses. Use them consistently.
-
-Limit to be honest about: the full approved-word dictionary holds about 900 words and is a
-separate document. It is not loaded here. Prefer the shortest common English word, and
-never claim that an output is certified STE.
-
-A worked example for every rule above lives in the output style
-(`~/.claude/output-styles/audhd.md`).
+A worked example for every rule lives in the output style (`~/.claude/output-styles/audhd.md`). Never claim that an output is certified STE.
 
 ## Agents
 
@@ -314,12 +263,12 @@ Why: the team writes effort in MD in all effort fields.
 
 These apply whenever you write or edit code.
 
-1. Do not write comments. Default to zero comments. The code itself must explain what it
-   does.
+1. Do not write comments. Default to zero comments, except item 6. The code itself must explain
+   what it does.
 2. Code must be self-explanatory. Use clear names for variables, functions, and types so
    the code reads without needing a comment to decode it. If you feel a comment is needed,
    rename or extract instead.
-3. The only allowed exception: a genuinely confusing place where the code cannot show the
+3. The other allowed exception: a genuinely confusing place where the code cannot show the
    *why* — a workaround for an external bug, a non-obvious constraint, a deliberate
    deviation that looks wrong. One short line, and only there. Delete any comment that
    restates the next line.
@@ -332,4 +281,10 @@ These apply whenever you write or edit code.
 5. Follow the project's `.editorconfig`. Match its indent style, indent size, line
    endings, charset, and trailing-whitespace/newline rules. If no `.editorconfig` exists,
    match the surrounding file.
+6. A new DTO, request model, or response model gets a brief doc comment on each public property.
+   Write one sentence that says what the value means, and its unit, format, or allowed values when
+   it has one. The class gets a comment only when a sibling class has one. An existing contract
+   type that gets a new member gets a doc comment on that member when a sibling member has one.
+   Write the comment in the language of the sibling comments. A comment that only repeats the
+   member name is a finding.
 

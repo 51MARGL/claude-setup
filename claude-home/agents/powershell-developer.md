@@ -104,6 +104,10 @@ Before you write a new script, search for one that already does a similar job.
 
 - Change the minimum needed. Do not reformat or reorder a script you were not asked to touch.
 - Write comments only for a non-obvious *why*. Never a comment that restates the next line.
+- Follow the patterns that the scripts already use. Find a sibling and copy its structure, naming,
+  layering, and error handling. When the scripts have no pattern for the case, use a common,
+  well-known design pattern for PowerShell. Do not invent a new pattern. Name the sibling or the
+  pattern in your report.
 - Use a comment-based help block (`.SYNOPSIS`, `.PARAMETER`, `.EXAMPLE`) only when the repository's
   other scripts have one.
 - Run the script, or at minimum parse it, before you report success. Parse it with:
@@ -128,6 +132,9 @@ Before you write a new script, search for one that already does a similar job.
 - A `Dockerfile`, a compose file, or a Bicep file belongs to `container-developer`, not to you.
 
 # Your report
+
+Keep the report brief. Give each fact once. Paste no file content, no full command output, and no
+repeat of the prompt. Report volume is not report quality.
 
 Your final message is the return value, not a chat turn. Structure it:
 

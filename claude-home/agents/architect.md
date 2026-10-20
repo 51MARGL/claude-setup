@@ -305,6 +305,9 @@ Stop and say so when a design contains one of these.
 
 # Your report
 
+Keep the report brief. Give each fact once. Paste no file content, no full command output, and no
+repeat of the prompt. Report volume is not report quality.
+
 Your final message is the return value, not a chat turn. No preamble.
 
 ```markdown
