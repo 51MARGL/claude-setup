@@ -14,7 +14,7 @@ This is a hard requirement. It applies to every message, every explanation, and 
 Never change the facts. Never remove a word that the sentence needs. Telegraphic style is a violation.
 
 - **Strict mode** — commands, numbered steps, error reports, warnings, commit messages, and anything I act on directly. Every rule applies.
-- **Relaxed mode** — explanations, walkthroughs, and trade-off discussion. Every rule applies, but the sentence cap is 25 words.
+- **Relaxed mode** — explanations, walkthroughs, and trade-off discussion. Every rule applies, but every sentence may have 25 words, also an instruction inside an explanation.
 
 1. One word, one meaning. Use one term per thing.
 2. One part of speech per word. Never use a noun as a verb.
@@ -96,7 +96,8 @@ compact gate, and I can answer a question in the middle of the chain.
 You cannot run `/compact`. No agent can. Only I can. So you decide when, and I type it.
 
 The gates, the blocks, and the decision rules are in the "Compact gates" section of
-`~/.claude/commands/orchestrate.md`. Never continue through a gate on your own.
+`~/.claude/commands/orchestrate.md`. Ask for a compact only at a gate, and only when the test in
+"How to decide" in that section is true. Never continue through a gate where that test is true.
 
 Why: a compact at a stage boundary keeps the plan and drops the search results. A compact in the
 middle of a stage drops what the next step needs, and the step has to run again.
@@ -122,72 +123,22 @@ line has twice landed as a signature change across several files.
 
 These rules apply to the main session only. A subagent ignores this section.
 
-Log mistakes in `~/.claude/MISTAKES.md`: what happened, root cause, consequence, prevention.
+Log mistakes in `~/.claude/MISTAKES.md`, not in the memory directory. Why: one file keeps the
+count of each root cause in one place.
 
-The file is mine. The team installer does not ship it and does not overwrite it. Each team
-member has their own file.
-
-Why: a log turns "that area is flaky" into a count of one root cause. A root cause that
-repeats becomes a rule for the whole team.
-
-### When to write an entry
+Write an entry when one of these happens:
 
 1. I correct you, or I reject your result.
 2. You broke something that worked before: a build, a test, a file, or a command.
 3. A claim that you made was false, such as "the tests pass".
-4. An agent report names a mistake. Agents report mistakes. Only the main session writes the
-   file.
+4. An agent report names a mistake. Only the main session writes the file.
 
-After you write an entry, say so in one line: `Logged in MISTAKES.md: <title>`.
+Load the `mistakes-log` skill to write an entry. After you write it, say so in one line:
+`Logged in MISTAKES.md: <title>`.
 
-Write mistakes in this file, not in the memory directory. Why: one file keeps the count in one
-place.
-
-### The format
-
-If the file does not exist, create it with the heading `# Mistakes`. Put the newest entry first,
-directly below the heading.
-
-```markdown
-## <yyyy-MM-dd> — <short title>
-- Repository: <repository name, or "all">
-- Area: <agent, workflow, file, or tool>
-- What happened: <the observed result, and the expected result>
-- Root cause: <the real cause, not the symptom>
-- Consequence: <what broke, and what it cost>
-- Prevention: <the rule that stops a repeat>
-- Same root cause as: <the dates of the earlier entries, or "none">
-```
-
-### Before you start work
-
-1. Search `MISTAKES.md` for the repository name and for the area of the task.
-2. Follow each `Prevention` line that applies.
-3. When a `Prevention` line changes your approach, say so in one line:
-   `Avoided <approach>: MISTAKES.md <date>`.
-
-### When a mistake repeats, ask me
-
-1. Before you write an entry, search for earlier entries with the same root cause. List their
-   dates in `Same root cause as`.
-2. When the new entry is the third entry with the same root cause, stop and ask me one question:
-   `<root cause> is in MISTAKES.md 3 times. Make it a rule?`
-3. In the same message, give the rule text and the target file:
-   - A team rule goes into `claude-home/CLAUDE-TEAM.md` or into an agent file in the
-     `claude-team-setup` repository. It goes through a pull request, so the team reviews it.
-     Each member gets it on the next update.
-   - A rule for one repository goes into the `CLAUDE.md` of that repository, through its own
-     pull request.
-4. Never write the rule into a `CLAUDE.md` or an agent file before I say yes.
-5. Never write the rule into `~/.claude/CLAUDE.md`. Why: that file is personal, and
-   the rule does not reach the team.
-
-After my answer:
-
-- Yes: write the change in the target repository. Add `- Graduated: <target file>, <date>` to
-  each entry with that root cause. Keep the entries. They are the evidence for the rule.
-- No: add `- Rule declined: <date>` to the newest entry. Ask again only after 2 more entries with
-  that root cause.
+Before you start work, run Grep on `MISTAKES.md` for the repository name and for the `Area` field of
+the task. Never read the whole file. Follow each `Prevention` line that applies. When a `Prevention`
+line changes your approach, say so in one line: `Avoided <approach>: MISTAKES.md <date>`.
 
 ## Work item effort
 
@@ -201,7 +152,7 @@ Why: the team writes effort in MD in all effort fields.
 
 These apply whenever you write or edit code.
 
-1. Do not write comments. Default to zero comments, except item 6. The code itself must explain
+1. Do not write comments. Default to zero comments, except items 3 and 6. The code itself must explain
    what it does.
 2. Code must be self-explanatory. Use clear names for variables, functions, and types so
    the code reads without needing a comment to decode it. If you feel a comment is needed,

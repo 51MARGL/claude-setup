@@ -11,9 +11,11 @@ the clone from `origin/master`, and runs `install.ps1 -UseSavedSwitches`.
 Each merge to `master` runs on every team machine at the next session start. Changes reach `master`
 only through a pull request.
 
-When a check stops the update (not on `master`, uncommitted changes, untracked files), `update.ps1`
-shows the stop message once per 24 hours for each reason. It records the last message in
-`%USERPROFILE%\.claude\team-setup\update-last-stop.json`. It deletes the file when all checks pass.
+When a check stops the update, `update.ps1` shows the stop message once per 24 hours for each
+reason. The reasons are: not on `master`, uncommitted changes, untracked files, `git-failed` (a git
+command failed or timed out), `merge-failed`, and `install-failed`. It records the last message in
+`%USERPROFILE%\.claude\team-setup\update-last-stop.json`. It deletes the file only when the update
+succeeds.
 
 ## Commands
 
@@ -30,7 +32,7 @@ $errors = $null; [System.Management.Automation.Language.Parser]::ParseFile("$PWD
 .\install.ps1
 ```
 
-`install.ps1` needs PowerShell 7.0. `update.ps1` needs PowerShell 7.2.
+`install.ps1` and `update.ps1` need PowerShell 7.2.
 
 Your own `%USERPROFILE%\.claude` holds an installed copy. Edit the files in this repository, not
 the installed copy. The next automatic update overwrites an edited installed file, with no backup.
@@ -39,7 +41,9 @@ the installed copy. The next automatic update overwrites an edited installed fil
 
 - **Plain files in `claude-home\`**: copied. The installer records the installed paths in
   `%USERPROFILE%\.claude\team-setup\install-state.json`. When you delete a file
-  from `claude-home\`, the installer deletes the installed copy too.
+  or a whole folder from `claude-home\`, the installer deletes the installed copy too. The installer
+  throws when `claude-home\` holds no file. It skips a saved path that is empty, is rooted, or
+  contains `..` or `:`, and prints a warning.
 - **`claude-home\settings.json`**: merged, not copied. The merge is additive:
   - `permissions.deny` and `permissions.ask`: team entries are added. A team entry that you delete
     from this file stays on every machine that has it.
@@ -83,14 +87,17 @@ Several files hold the same fact. When you change one, change the others in the 
    "Keep the report brief" text is in the report section of every agent file.
 8. **The DTO doc-comment rule**: "Code style" item 6 in `claude-home\CLAUDE-TEAM.md`,
    `dotnet-developer.md`, `frontend-developer.md`, and `style-reviewer.md`.
-9. **The test-run scopes**: `orchestrate.md` (the test step, the fix pass, and the final suite run),
-   `tester.md`, and `README.md`.
+9. **The test-run scopes**: `orchestrate.md` (the test step, the fix pass, the final suite run, and
+   the `baseline` and `reproduce` scopes), `tester.md`, and `README.md`.
+10. **The toast text** "Waiting for agents. Nothing needed from you now.": `orchestrate.md`,
+    `README.md`, and `notify.ps1` (`$waitLine`).
 
 ## Writing rules for this repository
 
 - Write agent files, commands, `README.md`, and commit messages in ASD-STE100 style, as
-  `claude-home\CLAUDE-TEAM.md` defines it. The full definition is in
-  `claude-home\output-styles\audhd.md`. `CLAUDE-TEAM.md` holds the short version.
+  `claude-home\CLAUDE-TEAM.md` defines it. `CLAUDE-TEAM.md` holds the full rules, because agents load
+  it and do not get the output style. `claude-home\output-styles\audhd.md` holds a worked example
+  for each rule ("CT rule N").
 - Keep CRLF line endings. The repository has no `.editorconfig`. On Windows, `sed -i` in Git Bash
   changes CRLF to LF, so use the Edit tool.
 - An agent file starts with frontmatter: `name`, `description` (with the trigger words), `tools`

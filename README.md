@@ -4,11 +4,11 @@
 
 1. Clone `<clone URL of this repository>` to a folder of your choice. Enter your credentials when Git asks.
    Git Credential Manager saves them.
-2. Open PowerShell 7 in the clone. Keep the clone on the `master` branch.
+2. Open PowerShell 7.2 or later in the clone. Keep the clone on the `master` branch.
 
 ## First install
 
-Run this in PowerShell 7 in the clone:
+Run this in PowerShell 7.2 or later in the clone:
 
 ```powershell
 .\install.ps1
@@ -49,11 +49,17 @@ The script does this:
 4. It fast-forwards the clone when `origin/master` has new commits.
 5. It runs `install.ps1` with your saved switches when the clone has a commit that is not installed yet.
 6. It writes a log to `%USERPROFILE%\.claude\team-setup\update.log`.
-7. It shows the result message, for success or failure, in Claude Code and gives it to Claude as context.
+7. It shows the result message, for success or failure, in Claude Code. It does not give the message to Claude.
 
-The script only writes to `update.log` and shows no message when no check is due, when the clone is
-not on `master`, when the clone has uncommitted changes or untracked files in `claude-home`, when
-no install state exists, or when the fetch fails.
+The script writes only to `update.log` and shows no message when no check is due, when no install
+state exists, or when the fetch fails.
+
+When a check stops the update, the script shows the stop message once per 24 hours for each reason.
+The reasons are: the clone is not on `master`, the clone has uncommitted changes, the clone has
+untracked files in `claude-home`, a git command failed or timed out, the fast-forward failed, and
+`install.ps1` failed. The script records the last stop message in
+`%USERPROFILE%\.claude\team-setup\update-last-stop.json`. It deletes this file only when the update
+succeeds. A failed fetch keeps the file.
 
 The script keeps the time of the last check in `%USERPROFILE%\.claude\team-setup\update-last-check.txt`.
 The file holds an ISO 8601 time with an offset, for example `2026-09-30T14:05:00.0000000+02:00`.
@@ -137,7 +143,7 @@ The workflows:
 | `test` | `git` branch → `tester` → `code-reviewer` + `style-reviewer` → fix pass by `tester` → `docs-updater` → `tester` final suite run → `git` commit. For test work with no production change |
 | `refactor` | `architect` → `Explore` → `git` branch → `tester` baseline → implementer → `tester` → `style-reviewer` + `code-reviewer` (+ guards) → fix pass → `docs-updater` → `tester` final suite run → `git` commit |
 | `review` | local diff, or a pull request through `pr-reviewer`, with the guards in both modes. Local mode also runs `docs-updater` in report-only mode |
-| `custom` | your own comma-separated agent list, for example `/orchestrate custom "Explore,dotnet-developer,code-reviewer" <task>`. When the list names an implementer, `/orchestrate` adds the `git`, `tester`, `docs-updater`, and final suite run steps that the list does not name |
+| `custom` | your own comma-separated agent list, for example `/orchestrate custom "Explore,dotnet-developer,code-reviewer" <task>`. When the list names an implementer, `/orchestrate` adds the five shared steps that the list does not name: the `git` branch step, the `tester` test step, the `docs-updater` step, the final suite run, and the `git` commit step |
 
 Two guards add `security-reviewer` and `migration-reviewer` to the review step. The conditions are
 in `claude-home\commands\orchestrate.md`, section "The guards".
@@ -149,12 +155,15 @@ run tests. `tester` does all test work, and edits test files only.
 The test step and the fix pass re-test run only the relevant tests. The final suite run runs the
 full suite of each test project that the diff touches, and each test project that tests a project
 that the diff touches. It runs each suite once, after the docs step and before the commit step.
+Two more `tester` scopes exist. The reproduce scope in `bugfix` runs only the new test, and that
+test must fail. The baseline scope in `refactor` runs the covering tests and the full suites, edits
+no file, and records the counts.
 
 The browser check step runs in `feature` and `bugfix` only. It runs when all three conditions are
 true:
 
 - The diff touches a UI file outside the test folders.
-- The repository runs as a standalone app with a dev server.
+- The repository runs as a standalone app: its `package.json` has a `dev` or `start` script.
 - The acceptance criteria, or the reproduction steps in `bugfix`, name something visible on the
   page.
 
@@ -186,8 +195,9 @@ The full rules are in `claude-home\commands\orchestrate.md`.
 The `git` agent does local git work with fixed name rules that fit any repository. The rules are
 in `claude-home\agents\git.md`.
 The agent works in the repository that your request names, or in the current folder.
-It starts a branch, stages and commits, updates a branch from the default branch, pushes, stashes,
-and manages worktrees. It reads the default branch (for example `master` or `main`) from
+It starts a branch, stages and commits, updates a branch from the default branch, pushes, and
+manages worktrees. It never stashes. When you have uncommitted changes on the default branch, it
+moves them to a new branch with `git switch -c`. It reads the default branch (for example `master` or `main`) from
 `origin/HEAD`.
 
 | Thing | Format |
@@ -211,13 +221,15 @@ The agent never adds a `Co-Authored-By:` line, a "Generated with" line, or anoth
 line to a commit message.
 
 The agent never creates the pull request on the server. It returns the title, the source branch, and
-the target branch, and you create the pull request. The agent never force-pushes.
+the target branch, and you create the pull request. The agent never force-pushes. When a force push
+is needed, it tells you to run the command yourself with `!`.
 
 ## Mistakes log
 
 Claude logs its own mistakes in `%USERPROFILE%\.claude\MISTAKES.md`. Each entry holds what
 happened, the root cause, the consequence, and the rule that prevents a repeat. The newest entry
-is first. The full rules are in the "Mistakes log" section of `claude-home\CLAUDE-TEAM.md`.
+is first. The triggers are in the "Mistakes log" section of `claude-home\CLAUDE-TEAM.md`. The
+entry format and the rule for a repeat are in the `mistakes-log` skill.
 
 The file is yours:
 
@@ -252,7 +264,10 @@ team reviews it there, and each member gets it on the next automatic update.
 8. It records the path of each file that it installs in
    `%USERPROFILE%\.claude\team-setup\install-state.json`. It overwrites an installed file that
    differs from the team copy. It makes no backup. It deletes a file that an earlier install added
-   and the repository no longer ships. It never deletes a file that it did not install.
+   and the repository no longer ships. This includes the files of a top-level folder that the
+   repository removed. It never deletes a file that it did not install. It stops with an error when
+   `claude-home\` holds no file, because the clone is then broken. It skips a saved path that is
+   empty, is absolute, or contains `..` or `:`, and prints a warning.
 9. It makes sure that `%USERPROFILE%\.claude\CLAUDE.md` holds the line `@~/.claude/CLAUDE-TEAM.md`.
    It does this at each install and each automatic update. It handles these cases:
    - No file: it creates the file with only the import line.
@@ -270,9 +285,10 @@ team reviews it there, and each member gets it on the next automatic update.
 | `claude-home\agents\` | 16 agents: architect, planner, dotnet-developer, frontend-developer, powershell-developer, container-developer, tester, code-reviewer, style-reviewer, security-reviewer, migration-reviewer, docs-updater, devops, pr-reviewer, git, Explore. `architect` and `pr-reviewer` run on opus. `planner` runs on sonnet when the task touches 1 project and fewer than 3 files, and on opus otherwise. `code-reviewer`, `security-reviewer`, and `migration-reviewer` run on sonnet, and `/orchestrate` raises them to opus by the "Reviewer model" rules in `orchestrate.md`. The implementers, `tester`, and `docs-updater` run on sonnet. `devops`, `style-reviewer`, and `git` run on haiku. `Explore` runs on haiku too. It overrides the built-in `Explore` agent, so haiku is the default model of that agent. A caller can still pass another `model` value in the `Agent` call, and that value wins. `/orchestrate` raises `tester` to opus for concurrency tests, for published contracts, or when `tester` asks for it. `/orchestrate` sets the model of each agent that it calls. When you call any other agent yourself, name the model in your request. |
 | `claude-home\commands\orchestrate.md` | The `/orchestrate` command. See the section above. |
 | `claude-home\output-styles\audhd.md` | The AuDHD output style. The installer selects it for you when `settings.json` has no other style. You can also select it with `/config` → Output style. |
-| `claude-home\skills\strategic-compact\` | The skill and the `UserPromptSubmit` and `PostToolUse` hooks that suggest `/compact` at 15% of the window, then at each further 10%. The hooks read the context size from the file that `statusline.ps1` writes. When that file is missing or older than 10 minutes, they read the transcript. Set `COMPACT_CONTEXT_PERCENT` and `COMPACT_CONTEXT_WINDOW` to change the values. |
+| `claude-home\skills\strategic-compact\` | The skill and the `UserPromptSubmit` and `PostToolUse` hooks that suggest `/compact` at 15% of the window, then at each further 10%. The hooks read the context size from the file that `statusline.ps1` writes. When that file is missing or older than 10 minutes, they read the transcript. Set `COMPACT_CONTEXT_PERCENT` (default `15`) and `COMPACT_CONTEXT_WINDOW` (default `1000000` tokens, used only when the hooks read the transcript, so set `200000` for a model without the 1M window) to change the values. When the context falls below 15%, for example after `/compact`, the hooks start again. The state is in `~/.claude/cache/strategic-compact/`. Each session has `<session_id>.json` (the last reported level, written by the hook) and `<session_id>.context.json` (the context percent, written by `statusline.ps1`). The hook deletes files older than 7 days. The skill is adapted from `WorldFlowAI/everything-claude-code`. The upstream script counts edits and keys its counter by the shell process id. This version reads the status line file, falls back to the transcript, keys its state by `session_id`, and runs in PowerShell. |
+| `claude-home\skills\mistakes-log\` | The skill that holds the entry format, the repeat rule, and the graduation steps for `MISTAKES.md`. |
 | `claude-home\hooks\notify.ps1` | The hook that shows a Windows toast when Claude needs you. See the next section. |
-| `claude-home\statusline.ps1` | The statusline script. It also writes the context size of the session for the strategic-compact hooks. |
+| `claude-home\statusline.ps1` | The statusline script. It shows the context percent as `ctx N%` and the session tokens as `session <N> tok`. It also writes the context size of the session for the strategic-compact hooks. |
 | `mcp\servers.json` | User-scope MCP servers: `microsoft-learn` (http), `playwright` (stdio, `cmd /c npx -y @playwright/mcp@latest --headless --isolated --browser msedge --output-dir %TEMP%\playwright-mcp`), and `context7` (http, no key). See "MCP servers". |
 
 ## MCP servers
@@ -336,7 +352,7 @@ You can also disable them in `/hooks`.
 ## Requirements
 
 - Windows 10 or 11.
-- PowerShell 7 (`pwsh`) on `PATH`. The hooks and the statusline run through `pwsh`.
+- PowerShell 7.2 or later (`pwsh`) on `PATH`. `install.ps1` and `update.ps1` need it. The hooks and the statusline run through `pwsh`.
 - Windows PowerShell 5.1 (`powershell.exe`). Windows includes it. The toast needs it.
 - Claude Code CLI (`claude`) on `PATH` for the MCP step.
 - Node.js 18 or later (`npx` on `PATH`), for the `playwright` MCP server.

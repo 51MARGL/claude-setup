@@ -17,7 +17,7 @@ $lastStopPath = Join-Path $stateRoot 'update-last-stop.json'
 $stopMessageRepeatHours = 24
 $lockPath = Join-Path $stateRoot 'update.lock'
 $installStatePath = Join-Path $stateRoot 'install-state.json'
-$localGitTimeoutSeconds = 30
+$localGitTimeoutSeconds = 10
 $mergeTimeoutSeconds = 60
 $logRotationBytes = 1MB
 $updateMessage = $null
@@ -91,6 +91,7 @@ function Invoke-Git {
     return Invoke-ProcessWithTimeout -FilePath $gitPath -ArgumentList (@('-C', $repoRoot) + $GitArguments) -TimeoutSeconds $TimeoutSeconds -Environment @{
         GIT_TERMINAL_PROMPT = '0'
         GCM_INTERACTIVE     = 'never'
+        GIT_OPTIONAL_LOCKS  = '0'
     }
 }
 
@@ -169,36 +170,46 @@ function Update-TeamSetup {
     }
     $script:gitPath = $gitCommand.Source
 
-    $insideWorkTree = Invoke-Git @('rev-parse', '--is-inside-work-tree')
-    if ($insideWorkTree.ExitCode -ne 0 -or $insideWorkTree.Output.Trim() -ne 'true') {
-        Write-UpdateLog 'WARN' "$repoRoot is not a git clone. Update stopped."
-        return
-    }
+    $gitFailedText = "Team Claude setup auto-update skipped: git failed in the clone at $repoRoot. See $logPath."
 
     $branch = Invoke-Git @('symbolic-ref', '--quiet', '--short', 'HEAD')
-    if ($branch.ExitCode -ne 0 -or $branch.Output.Trim() -ne 'master') {
+    if ($branch.TimedOut -or $branch.ExitCode -notin 0, 1) {
+        Write-UpdateLog 'WARN' "git symbolic-ref failed: $(Get-FailureText $branch)"
+        Set-StopMessage -Reason 'git-failed' -Text $gitFailedText
+        return
+    }
+    if ($branch.ExitCode -eq 1 -or $branch.Output.Trim() -ne 'master') {
         Write-UpdateLog 'INFO' 'The clone is not on master. Update stopped.'
-        Set-StopMessage -Reason 'not-on-master' -Text "Team Claude setup auto-update skipped: the clone at $repoRoot is not on master."
+        Set-StopMessage -Reason 'not-on-master' -Text "Team Claude setup auto-update skipped: the clone at $repoRoot is not on master. Run: git -C `"$repoRoot`" switch master"
         return
     }
 
     $status = Invoke-Git @('status', '--porcelain', '--untracked-files=no')
-    if ($status.ExitCode -ne 0 -or $status.Output.Trim()) {
+    if ($status.TimedOut -or $status.ExitCode -ne 0) {
+        Write-UpdateLog 'WARN' "git status failed: $(Get-FailureText $status)"
+        Set-StopMessage -Reason 'git-failed' -Text $gitFailedText
+        return
+    }
+    if ($status.Output.Trim()) {
         Write-UpdateLog 'INFO' 'The clone has uncommitted changes. Update stopped.'
-        Set-StopMessage -Reason 'uncommitted-changes' -Text "Team Claude setup auto-update skipped: the clone at $repoRoot has uncommitted changes."
+        Set-StopMessage -Reason 'uncommitted-changes' -Text "Team Claude setup auto-update skipped: the clone at $repoRoot has uncommitted changes. Commit or stash them."
         return
     }
 
     $untrackedShippedFiles = Invoke-Git @('ls-files', '--others', '--exclude-standard', '--', 'claude-home')
-    if ($untrackedShippedFiles.ExitCode -ne 0 -or $untrackedShippedFiles.Output.Trim()) {
+    if ($untrackedShippedFiles.TimedOut -or $untrackedShippedFiles.ExitCode -ne 0) {
+        Write-UpdateLog 'WARN' "git ls-files failed: $(Get-FailureText $untrackedShippedFiles)"
+        Set-StopMessage -Reason 'git-failed' -Text $gitFailedText
+        return
+    }
+    if ($untrackedShippedFiles.Output.Trim()) {
         Write-UpdateLog 'INFO' 'The clone has untracked files in claude-home. Update stopped.'
-        Set-StopMessage -Reason 'untracked-files' -Text "Team Claude setup auto-update skipped: the clone at $repoRoot has untracked files in claude-home."
+        Set-StopMessage -Reason 'untracked-files' -Text "Team Claude setup auto-update skipped: the clone at $repoRoot has untracked files in claude-home. Commit or delete them."
         return
     }
 
-    Remove-Item -LiteralPath $lastStopPath -Force -ErrorAction SilentlyContinue
-
     $mergeFailed = $false
+    $headBeforeMerge = $null
     $fetch = Invoke-Git @('fetch', 'origin', 'master') -TimeoutSeconds $FetchTimeoutSeconds
     if ($fetch.ExitCode -ne 0) {
         Write-UpdateLog 'WARN' "git fetch failed: $(Get-FailureText $fetch)"
@@ -208,11 +219,10 @@ function Update-TeamSetup {
             Write-UpdateLog 'WARN' "git rev-list failed: $(Get-FailureText $behind)"
         } elseif ([int]$behind.Output.Trim() -gt 0) {
             $incomingCommits = Invoke-Git @('log', '--oneline', 'HEAD..origin/master')
-            $incomingDiffStat = Invoke-Git @('diff', '--stat', 'HEAD', 'origin/master')
-            $incomingPaths = Invoke-Git @('diff', '--name-only', 'HEAD', 'origin/master')
-            Write-UpdateLog 'INFO' "Incoming commits:`n$($incomingCommits.Output.Trim())`nIncoming changes:`n$($incomingDiffStat.Output.Trim())"
+            $headBeforeMergeResult = Invoke-Git @('rev-parse', 'HEAD')
+            if ($headBeforeMergeResult.ExitCode -eq 0) { $headBeforeMerge = $headBeforeMergeResult.Output.Trim() }
+            Write-UpdateLog 'INFO' "Incoming commits:`n$($incomingCommits.Output.Trim())"
             $incomingCommitCount = [int]$behind.Output.Trim()
-            $script:changedSensitivePaths = @($incomingPaths.Output -split '\r?\n' | Where-Object { $_ -in $sensitivePaths })
             $merge =Invoke-Git @('merge', '--ff-only', 'origin/master') -TimeoutSeconds $mergeTimeoutSeconds
             if ($merge.ExitCode -ne 0) {
                 $mergeFailed = $true
@@ -236,6 +246,7 @@ function Update-TeamSetup {
     $installState = Get-Content -LiteralPath $installStatePath -Raw | ConvertFrom-Json -AsHashtable
     $installedCommit = [string]$installState['installedCommit']
     if ($headCommit -ne $installedCommit) {
+        $comparedWithInstalledCommit = $false
         $installedCommitKnown = $false
         if ($installedCommit) {
             $installedCommitCheck = Invoke-Git @('cat-file', '-e', "$installedCommit^{commit}")
@@ -247,16 +258,27 @@ function Update-TeamSetup {
             if ($sinceInstalledCount.ExitCode -eq 0 -and $sinceInstalledPaths.ExitCode -eq 0) {
                 $script:mergedCommitCount = [int]$sinceInstalledCount.Output.Trim()
                 $script:changedSensitivePaths = @($sinceInstalledPaths.Output -split '\r?\n' | Where-Object { $_ -in $sensitivePaths })
+                $comparedWithInstalledCommit = $true
             } else {
                 Write-UpdateLog 'WARN' 'Could not compare with the installed commit. The message uses the commits merged in this run.'
             }
         } else {
             Write-UpdateLog 'WARN' 'The installed commit is unknown. The message uses the commits merged in this run.'
         }
+        if (-not $comparedWithInstalledCommit -and $headBeforeMerge -and $headBeforeMerge -ne $headCommit) {
+            $mergedPaths = Invoke-Git @('diff', '--name-only', $headBeforeMerge, 'HEAD')
+            if ($mergedPaths.ExitCode -eq 0) {
+                $script:changedSensitivePaths = @($mergedPaths.Output -split '\r?\n' | Where-Object { $_ -in $sensitivePaths })
+            }
+        }
         $script:lock.Dispose()
-        $installer = Invoke-ProcessWithTimeout -FilePath ([Environment]::ProcessPath) -TimeoutSeconds $InstallTimeoutSeconds -ArgumentList @(
-            '-NoProfile', '-NonInteractive', '-File', (Join-Path $repoRoot 'install.ps1'), '-UseSavedSwitches'
-        )
+        $installerArguments = @('-NoProfile', '-NonInteractive', '-File', (Join-Path $repoRoot 'install.ps1'), '-UseSavedSwitches')
+        $installer = Invoke-ProcessWithTimeout -FilePath ([Environment]::ProcessPath) -TimeoutSeconds $InstallTimeoutSeconds -ArgumentList $installerArguments
+        if ($installer.ExitCode -ne 0 -and "$($installer.Output) $($installer.ErrorOutput)" -match 'Another install or update runs') {
+            Write-UpdateLog 'INFO' 'Another install runs. Waiting 2 seconds, then running install.ps1 once more.'
+            Start-Sleep -Seconds 2
+            $installer = Invoke-ProcessWithTimeout -FilePath ([Environment]::ProcessPath) -TimeoutSeconds $InstallTimeoutSeconds -ArgumentList $installerArguments
+        }
         Write-UpdateLog 'INFO' "install.ps1 output:`n$($installer.Output.Trim())`n$($installer.ErrorOutput.Trim())"
         if ($installer.ExitCode -eq 0) {
             $installedNewCommit = $true
@@ -266,10 +288,15 @@ function Update-TeamSetup {
         }
     }
 
-    if ($mergeFailed -or $installerFailed) {
-        $script:updateMessage = "Team Claude setup auto-update failed. See $logPath."
+    if ($mergeFailed) {
+        Set-StopMessage -Reason 'merge-failed' -Text "Team Claude setup auto-update failed: git could not fast-forward the clone at $repoRoot. See $logPath."
         return
     }
+    if ($installerFailed) {
+        Set-StopMessage -Reason 'install-failed' -Text "Team Claude setup auto-update failed: install.ps1 reported an error. See $logPath."
+        return
+    }
+    if ($fetch.ExitCode -eq 0) { Remove-Item -LiteralPath $lastStopPath -Force -ErrorAction SilentlyContinue }
     if (-not $installedNewCommit) { return }
 
     $message = "Team Claude setup updated to $($headCommit.Substring(0, 7))"
@@ -311,13 +338,7 @@ try {
 }
 
 if ($updateMessage) {
-    $hookOutput = @{
-        systemMessage      = $updateMessage
-        hookSpecificOutput = @{
-            hookEventName     = 'SessionStart'
-            additionalContext = $updateMessage
-        }
-    }
+    $hookOutput = @{ systemMessage = $updateMessage }
     Write-Output ($hookOutput | ConvertTo-Json -Depth 5 -Compress -EscapeHandling EscapeNonAscii)
 }
 exit 0

@@ -89,10 +89,9 @@ try {
         New-Item -ItemType Directory -Path $stateDirectory -Force | Out-Null
     }
 
+    $staleLimit = (Get-Date).AddDays(-7)
     Get-ChildItem -LiteralPath $stateDirectory -File |
-        Where-Object { $_.Extension -in '.json', '.count', '.tmp' -and $_.LastWriteTime -lt (Get-Date).AddDays(-7) } |
-        Remove-Item -Force -ErrorAction SilentlyContinue
-    Get-ChildItem -LiteralPath $stateDirectory -Filter '*.count' -File |
+        Where-Object { $_.Extension -eq '.count' -or ($_.Extension -in '.json', '.tmp' -and $_.LastWriteTime -lt $staleLimit) } |
         Remove-Item -Force -ErrorAction SilentlyContinue
 
     $safeSessionId = $sessionId -replace '[^A-Za-z0-9._-]', '_'
@@ -145,12 +144,13 @@ try {
         $windowThousands = [Math]::Round($reportedWindowTokens / 1000)
         $tokenDetail = " (${contextThousands}k of ${windowThousands}k tokens)"
     }
-    $message = "[StrategicCompact] Context is at $percent%$tokenDetail. Inside an agent chain, ask the user to run /compact at the next compact gate. Outside an agent chain, ask the user to run /compact at the end of the current answer."
+    $userMessage = "[StrategicCompact] Context is at $percent%$tokenDetail. Claude asks for /compact at the next gate."
+    $modelMessage = "[StrategicCompact] Context is at $percent%$tokenDetail. Inside an agent chain, ask the user to run /compact at the next compact gate. Outside an agent chain, ask the user to run /compact at the end of the current answer."
     $hookEventName = if ([string]$payload.hook_event_name -eq 'UserPromptSubmit') { 'UserPromptSubmit' } else { 'PostToolUse' }
     @{
-        systemMessage      = $message
+        systemMessage      = $userMessage
         suppressOutput     = $true
-        hookSpecificOutput = @{ hookEventName = $hookEventName; additionalContext = $message }
+        hookSpecificOutput = @{ hookEventName = $hookEventName; additionalContext = $modelMessage }
     } | ConvertTo-Json -Compress -Depth 3
 } catch {
     exit 0

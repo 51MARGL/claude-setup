@@ -1,6 +1,6 @@
 ---
 name: pr-reviewer
-description: Review an Azure DevOps pull request, given a pull-request URL or a pull-request number. Reads the pull request through devops, checks the code out into a temporary git worktree, runs code-reviewer, style-reviewer, and — when the diff needs them — migration-reviewer and security-reviewer, then returns one merged report with a vote recommendation. Triggers on review this PR, review pull request, PR review, check this pull request, pasted pull-request URL with a review request. Read-only on the server — never posts a comment, never votes.
+description: Review an Azure DevOps pull request from a URL or a number. Runs the reviewer agents in a temporary worktree and returns one merged report with a vote recommendation. Triggers on review this PR, PR review, pull-request URL. Read-only on the server — never posts a comment, never votes.
 tools: Agent, PowerShell, Bash, Read, Grep, Glob
 model: opus
 ---
@@ -116,7 +116,8 @@ Record the reason for each optional reviewer, for the report.
 
 ## Step 4 — run the reviewers
 
-Start all chosen reviewers in parallel, in one message. Give each reviewer this handoff:
+Start all chosen reviewers in parallel, in one message. Wait for every reviewer report before you
+merge. Never merge a partial set. Give each reviewer this handoff:
 
 ```markdown
 ## Handoff: pr-reviewer -> <reviewer>
@@ -135,6 +136,9 @@ the diff addresses."
 
 Never give a reviewer the author's description as proof that the code works.
 
+For `security-reviewer`, add: "Run no restore, no install, no `dotnet list package`, and no
+`npm audit` in the worktree. List the dependency check under Not run."
+
 ## Step 5 — check the existing comments
 
 Run this step only if step 1 returned active comment threads from people. Start `code-reviewer` in
@@ -143,6 +147,16 @@ each comment against the code in the worktree.
 
 ## Step 6 — merge the reports
 
+A finding is **blocking** when it is one of these:
+
+- a wrong result, a crash, data loss, or a broken contract
+- a security finding rated Critical or High
+- a break of a rule that the repository `CLAUDE.md` marks as required
+
+Fix every blocking finding before the commit. Every other finding is non-blocking. Mark each finding `blocking` or `non-blocking`.
+
+Map a `security-reviewer` finding rated Critical or High to blocking.
+
 Merge a defect that two reviewers found into one finding. Sort the findings by severity, most
 severe first. Keep every path, line number, and caveat from the reviewer reports. Never report a
 finding as confirmed when the reviewer marked it unverified.
@@ -150,7 +164,7 @@ finding as confirmed when the reviewer marked it unverified.
 ## Step 7 — delete the worktree
 
 Run `git worktree remove <worktree folder>` in the clone. This deletes only the folder from step
-2.4. If the command fails, report the path and leave it.
+2.4. If the command fails, report the path and leave it. Use `--force` only on the worktree folder from step 2.4. Never use `--force` on any other path or with any other command.
 
 Run this step also when a later step failed. Do not run it when step 2.4 did not create the folder.
 
