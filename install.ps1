@@ -1,4 +1,4 @@
-#Requires -Version 7.0
+#Requires -Version 7.2
 [CmdletBinding(SupportsShouldProcess, DefaultParameterSetName = 'Manual')]
 param(
     [Parameter(ParameterSetName = 'Manual')][switch]$SkipStatusLine,
@@ -308,7 +308,7 @@ try {
         if (Test-Path -LiteralPath $TargetPath) { $existingText = Get-Content -LiteralPath $TargetPath -Raw }
 
         if ([string]::IsNullOrWhiteSpace($existingText)) {
-            if ($SkipStatusLine -or $SkipAutoUpdate -or $OutputStyle) { return ($teamSettings | ConvertTo-Json -Depth 20) + "`n" }
+            if ($SkipStatusLine -or $SkipAutoUpdate -or $OutputStyle) { return ($teamSettings | ConvertTo-Json -Depth 100) + "`n" }
             return $teamSettingsText
         }
 
@@ -318,10 +318,10 @@ try {
             throw "The existing settings file '$TargetPath' is not valid JSON. Fix or remove it, then run the installer again. $($_.Exception.Message)"
         }
 
-        $existingNormalized = $existingSettings | ConvertTo-Json -Depth 20
+        $existingNormalized = $existingSettings | ConvertTo-Json -Depth 100
         $mergedSettings = Merge-Settings -Existing $existingSettings -Team $teamSettings
         if ($OutputStyle) { $mergedSettings['outputStyle'] = $OutputStyle }
-        $mergedNormalized = $mergedSettings | ConvertTo-Json -Depth 20
+        $mergedNormalized = $mergedSettings | ConvertTo-Json -Depth 100
         if ($mergedNormalized -eq $existingNormalized) { return $existingText }
         return $mergedNormalized + "`n"
     }
@@ -361,8 +361,15 @@ try {
         }
     }
 
-    $outputStyleName = (Select-String -LiteralPath (Join-Path $sourceRoot 'output-styles\audhd.md') -Pattern '^name:\s*(.+?)\s*$' |
-        Select-Object -First 1).Matches[0].Groups[1].Value
+    $sourceFiles = Get-ChildItem -LiteralPath $sourceRoot -Recurse -File
+    if (@($sourceFiles).Count -eq 0) { throw "'$sourceRoot' holds no file. The clone may be broken." }
+    $sourceRelativePaths = @($sourceFiles | ForEach-Object { [System.IO.Path]::GetRelativePath($sourceRoot, $_.FullName) })
+
+    $outputStyleName = $null
+    if (-not $SkipOutputStyle) {
+        $outputStyleName = (Select-String -LiteralPath (Join-Path $sourceRoot 'output-styles\audhd.md') -Pattern '^name:\s*(.+?)\s*$' |
+            Select-Object -First 1).Matches[0].Groups[1].Value
+    }
     $outputStylePlan = if ($SkipOutputStyle) { [pscustomobject]@{ Action = 'Skipped'; Value = $null } } else { Get-OutputStylePlan }
     $outputStyleForSettingsJson = ''
     if ($outputStylePlan.Action -eq 'Set') { $outputStyleForSettingsJson = $outputStyleName }
@@ -370,13 +377,7 @@ try {
     $excludedFiles = @()
     if ($SkipStatusLine) { $excludedFiles += 'statusline.ps1' }
 
-    $sourceFiles = Get-ChildItem -LiteralPath $sourceRoot -Recurse -File
-    $sourceRelativePaths = @($sourceFiles | ForEach-Object { [System.IO.Path]::GetRelativePath($sourceRoot, $_.FullName) })
-
-    $settingsContent = $null
-    if ('settings.json' -notin $excludedFiles) {
-        $settingsContent = Get-SettingsContent -SourcePath (Join-Path $sourceRoot 'settings.json') -TargetPath (Join-Path $targetRoot 'settings.json') -OutputStyle $outputStyleForSettingsJson
-    }
+    $settingsContent = Get-SettingsContent -SourcePath (Join-Path $sourceRoot 'settings.json') -TargetPath (Join-Path $targetRoot 'settings.json') -OutputStyle $outputStyleForSettingsJson
 
     $mcpServers = $null
     if (-not $SkipMcp) {
@@ -392,6 +393,7 @@ try {
         $relativePath = [System.IO.Path]::GetRelativePath($sourceRoot, $sourceFile.FullName)
         if ($relativePath -in $excludedFiles) {
             Write-Host "Skipped $relativePath"
+            if ($relativePath -in $previousInstalledFiles) { $installedFiles.Add($relativePath) }
             continue
         }
 
@@ -422,14 +424,12 @@ try {
         }
     }
 
-    $shippedTopLevelNames = @($sourceRelativePaths | ForEach-Object { ($_ -split '[\\/]')[0] } | Select-Object -Unique)
     foreach ($previouslyShippedPath in $previousInstalledFiles) {
+        if ($previouslyShippedPath -isnot [string] -or [string]::IsNullOrWhiteSpace($previouslyShippedPath) -or [System.IO.Path]::IsPathRooted($previouslyShippedPath) -or $previouslyShippedPath.Contains('..') -or $previouslyShippedPath.Contains(':')) {
+            Write-Warning "Skipped the saved path '$previouslyShippedPath' because it is not a relative path inside the target folder."
+            continue
+        }
         if ($previouslyShippedPath -notin $sourceRelativePaths) {
-            $topLevelName = ($previouslyShippedPath -split '[\\/]')[0]
-            if ($topLevelName -notin $shippedTopLevelNames) {
-                Write-Warning "Skipped the removal of '$previouslyShippedPath' because the team setup ships no top-level entry named '$topLevelName'."
-                continue
-            }
             Remove-TargetFile -RelativePath $previouslyShippedPath
         }
     }

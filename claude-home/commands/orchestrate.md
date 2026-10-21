@@ -1,5 +1,5 @@
 ---
-description: Run a fixed chain of agents over one task — plan, implement, test, review, update the docs, commit — with a handoff between each step and a state line after each step.
+description: Run a fixed chain of agents over one task — plan, implement, test, review, update the docs, commit. The chain has a handoff between each step and a step line after each step.
 argument-hint: <design|feature|bugfix|test|refactor|review|custom> <description | pull-request URL or number>
 ---
 
@@ -57,8 +57,8 @@ Match top to bottom. The first row that fits wins.
 | Asks where something belongs, what it breaks, or which option to take | `design` |
 | Is a pull-request URL, or asks to review a pull request by number | `review`, pull-request mode |
 | Is only a reference: a work-item number, or a work-item URL | resolve it in step 2, then classify on the resolved text |
-| Asks to add tests, fix a test, or find a flaky test, with no production change | `test` |
-| Reports wrong behaviour: an error, a failing test, a wrong result, a vulnerability, a leaked secret | `bugfix` |
+| Asks to add tests, fix a test, or find a flaky test, or reports a test that fails because of the test code, with no production change | `test` |
+| Reports wrong behaviour: an error, a test that fails because of production code, a wrong result, a vulnerability, a leaked secret | `bugfix` |
 | Asks to review, check, or audit local work or code that already exists, including "is this safe" | `review`, local mode |
 | Moves, renames, extracts, or deduplicates code with no behaviour change | `refactor` |
 | Adds or changes behaviour, including a database schema, an entity, or a migration | `feature` |
@@ -86,7 +86,7 @@ Pass `model` on every `Agent` call. Default to these, and say in one line when y
 | `docs-updater` | `sonnet` | It decides which document the change made wrong, and it writes new text |
 | `general-purpose`, any other helper agent | `sonnet` | The task is open, so the agent file holds no rules for it |
 
-The main session runs on `opus`. It plans, decides, and resolves questions from the agents.
+The main session plans, decides, and resolves questions from the agents.
 
 Raise any other step to `opus` when one of these is true:
 
@@ -143,8 +143,8 @@ Use this workflow for a vulnerability or a leaked secret too. The security guard
 
 1. `Explore` — find where the defect lives. Give it the symptom, not a guess at the cause. Set the breadth to `medium`.
 2. `git` — the branch step.
-3. `tester` — write a test that reproduces the bug. Run it, and show that it fails for the reason
-   in the bug report.
+3. `tester` — the reproduce scope. Write a test that reproduces the bug. Run only that test, and
+   show that it fails for the reason in the bug report.
 4. Implementer — fix the bug. Give it the failing test as the definition of done.
 5. `tester` — the test step. Run the test from step 3 and the tests that cover the change.
 6. `tester` — the browser check step. See [browser check](#the-browser-check-step--tester).
@@ -182,7 +182,7 @@ If `tester` finds that production code is wrong, stop the chain. Print the failu
    inside one project and changes no public surface. When you skip it, say why in one line.
 1. `Explore` — map every caller and every dependency of the code to be changed. Set the breadth to `very thorough`.
 2. `git` — the branch step.
-3. `tester` — the baseline. Add no test. Record two sets of counts:
+3. `tester` — the baseline scope. Add no test. Record two sets of counts:
    - the counts of the tests that cover the code from step 1
    - the counts of the full suite of each test project from the scope in [The final suite
      run](#the-final-suite-run--tester)
@@ -199,8 +199,7 @@ If `tester` finds that production code is wrong, stop the chain. Print the failu
 
 ### review
 
-One workflow, two modes. The input selects the mode. The first word `pr` also selects this
-workflow, in pull-request mode.
+One workflow, two modes. The input selects the mode.
 
 #### Pick the mode
 
@@ -209,7 +208,7 @@ Match top to bottom. The first row that fits wins.
 | The input | Mode |
 |---|---|
 | A pull-request URL | pull-request mode |
-| A bare number, and the user says "PR", "pull request", or the first word is `pr` | pull-request mode |
+| A bare number, and the user says "PR" or "pull request" | pull-request mode |
 | A bare number with no other signal | ask one question: pull request or work item? |
 | No reference, or the user says "local", "my changes", "my branch", "the diff", or names a path | local mode |
 
@@ -239,7 +238,9 @@ Review the work in the local repository.
 1. Find the diff. Use the first rule that fits:
    - The user named a path, a branch, or a commit range: review that.
    - Otherwise: the uncommitted changes plus the commits on the current branch that are not on
-     the default branch. Use `git merge-base HEAD origin/<default>` as the base.
+     the default branch. Get the default branch from
+     `git symbolic-ref --short refs/remotes/origin/HEAD`. Use `git merge-base HEAD <default>` as the
+     base.
    - If the diff is empty, stop and say so. Do not review the whole repository.
 2. Print the base, the number of changed files, and the number of changed lines in one line.
 3. Run in parallel, in one message:
@@ -275,8 +276,11 @@ Mark each added step as `(added)` in the printed chain. The user can remove it b
 
 ## Shared steps
 
-Every workflow that changes files runs the test step, the fix pass, the branch step, the docs step,
-the final suite run, and the commit step. Never skip one to save time.
+Five shared steps: the branch step, the test step, the docs step, the final suite run, and the
+commit step. The workflows `feature`, `bugfix`, `refactor`, and `test` run them, except that `test`
+has no separate test step, because its `tester` step writes and runs the tests. The fix pass runs
+only when the review step returns a blocking finding. Never skip a shared step in these four
+workflows to save time.
 
 ### The guards
 
@@ -305,7 +309,7 @@ Run it after an implementer, before the review step that follows.
 3. Tell it to run the new tests and the tests that cover the change. It never runs the full suite.
 4. Put its counts (passed, failed, skipped) in the step line.
 5. If a test fails because of production code, send the failure to the implementer, then run the
-   test step again. This counts as one fix pass.
+   test step again. See [The fix pass](#the-fix-pass) for the count.
 
 If `planner` or `tester` reported that the repository has no tests, skip each later test step and
 the final suite run. Say so in one line, and name the build as the only check in the final report.
@@ -327,7 +331,7 @@ It runs only when all three conditions are true:
   - `.sass`
   - `.less`
   - `.html`
-- The repository runs as a standalone app with a dev server.
+- The repository runs as a standalone app: its `package.json` has a `dev` or `start` script.
 - The acceptance criteria name something visible on the page. In `bugfix`, the reproduction steps
   name something visible on the page.
 
@@ -341,7 +345,8 @@ Decide from the diff, not from the plan.
 2. Tell it to edit no file.
 3. Put the result of each acceptance criterion in the step line.
 4. If a check fails because of production code, send the failure to the implementer. Then run the
-   test step again. Then run the browser check step again. This counts as one fix pass.
+   test step again. Then run the browser check step again. See [The fix pass](#the-fix-pass) for
+   the count.
 5. If `tester` reports `SKIPPED: login needed`, offer the user a check in their own browser with
    Claude in Chrome.
 
@@ -350,6 +355,18 @@ When a condition is false, skip the step. Say so in the step line.
 Why: a unit test cannot show that a page renders and that the console has no error.
 
 ### The fix pass
+
+A finding is **blocking** when it is one of these:
+
+- a wrong result, a crash, data loss, or a broken contract
+- a security finding rated Critical or High
+- a break of a rule that the repository `CLAUDE.md` marks as required
+
+Fix every blocking finding before the commit. Every other finding is non-blocking. Mark each finding `blocking` or `non-blocking`.
+
+One fix pass is one fix-and-re-run of one stage. Count each stage on its own: the test step, the
+browser check step, the review step, and the final suite run. A stage that needs a second fix pass
+is not converging, so stop the chain.
 
 A review step can return two kinds of findings. Route each finding to its owner:
 
@@ -365,7 +382,8 @@ When `security-reviewer` or `migration-reviewer` returned a blocking finding, ru
 again after the fix pass. Tell it to confirm that each blocking finding is closed, and that the fix
 opened nothing new.
 
-Skip the fix pass when the review step returned no blocking finding. Say so in the step line.
+Skip the fix pass when the review step returned no blocking finding. Say so in the step line. Put
+each non-blocking finding in the "Non-blocking findings" section of the final report.
 
 ### The final suite run — `tester`
 
@@ -376,8 +394,13 @@ step, and before the commit step. It runs also when no fix pass ran.
    project that tests a project that the diff touches.
 2. Tell it to edit no file.
 3. Put its counts (passed, failed, skipped) in the step line.
-4. If the suite fails because of production code, send the failure to the implementer. Then run the
-   final suite run again. This counts as one fix pass.
+4. If the suite fails because of production code, do these steps in order:
+   - Send the failure to the implementer.
+   - Run the test step on the failed tests.
+   - Run one `code-reviewer` pass on the new diff only.
+   - Run the final suite run again.
+
+   See [The fix pass](#the-fix-pass) for the count.
 5. In the `test` workflow, a failure caused by production code stops the chain. Print the failure,
    and offer the `bugfix` workflow.
 
@@ -390,7 +413,8 @@ test that no earlier step ran.
 
 Run it before the first implementer.
 
-1. Run `git branch --show-current` yourself. Compare it with the default branch.
+1. Run `git branch --show-current` yourself. Compare it with the default branch from
+   `git symbolic-ref --short refs/remotes/origin/HEAD`.
 2. If the current branch is a work branch, skip the agent. Print the branch name in the step line.
 3. If the current branch is the default branch, send `git`. Tell it to create a work branch and
    switch to it.
@@ -407,8 +431,7 @@ Run it after the last review step and its fix pass, before the commit step.
 2. Tell it to edit documentation files only.
 3. Add each file it changed to the "Files changed" list of the final report.
 
-Run it always. It returns "no document is stale" when the diff makes no document wrong. That run
-costs about 1 to 2 minutes on `sonnet`.
+Run it always. It returns "no document is stale" when the diff makes no document wrong.
 
 Why: you cannot tell from the handoffs alone which README, `CLAUDE.md`, or API description names
 the changed code. The agent searches for them.
@@ -455,7 +478,7 @@ Rules for the handoff:
 - Carry forward every constraint the previous agent detected, such as an analyzer ban or a
   convention.
 - Never carry forward a finding as a fact when the previous agent marked it a question.
-- A reviewer gets the diff to review, never the implementer's own summary of it.
+- Give a reviewer the diff base and the scope. Never paste the diff or the implementer summary.
 - Name the sibling that the new code must match. Tell the implementer to copy the sibling pattern,
   or to use a different pattern in both the new code and the sibling. Never allow a new pattern in
   the new code only. Why: a helper class that no sibling uses gives the code two ways to do one
@@ -509,8 +532,8 @@ In time order:
    `architect` and `planner`, because the plan needs the design note.
 2. **Gate B — the code is done.** After the first test step that follows the implementer, and
    after the browser check step when that step runs. Gate B comes before the first review step
-   starts. The reviewers read the diff from disk, not from the
-   context. A fix pass, its re-test, and a second review run never open gate B again.
+   starts. The reviewers read the diff from disk, not from the context. A fix pass, its re-test,
+   and a second review run never open gate B again.
 3. **Gate C — the task is done.** After the final report, and before a new task starts in the same
    session.
 
@@ -529,9 +552,10 @@ Never ask for a compact at these points. The next step needs the context that a 
 Ask for a compact at a gate when one of these is true. Otherwise continue and say nothing.
 
 1. The `[StrategicCompact]` hook printed a message since the last gate. The hook reads the context
-   size of this session from the status line file, or from the transcript when that file is old. It prints a message when the context reaches 15% of
-   the window, and again at each further 10%.
-2. The next stage works on a different area of the code.
+   size of this session from the status line file. When that file is old, it reads the transcript.
+   It prints a message when the context reaches 15% of the window, and again at each further 10%.
+2. The next stage works on a different area of the code. A different area means a different
+   project or a different top-level folder than the last stage.
 
 Agents read the files, not this session. So the number of files that a stage read does not tell
 you the size of this context. Use the hook message.
@@ -558,8 +582,8 @@ Stop the chain and report, when:
 
 - An implementer reports the task is blocked.
 - A build or a test fails and the implementer could not fix it.
-- A reviewer returns a blocking finding and the fix pass already ran once. Two fix passes on the
-  same finding means the chain is not converging.
+- A stage needs a second fix pass. See [The fix pass](#the-fix-pass). A reviewer that returns a
+  blocking finding after the first fix pass means the chain is not converging.
 - `tester` cannot reproduce the bug in the `bugfix` workflow. Do not fix a bug that no test or
   reproduction shows.
 - The test counts after a refactor do not match the baseline, and the fix pass already ran once.
@@ -597,6 +621,10 @@ Findings not fixed
 ------------------
 <blocking findings left open, and why>
 
+Non-blocking findings
+---------------------
+<each non-blocking finding, with its path and line>
+
 Commit
 ------
 Branch: <branch name>
@@ -613,21 +641,16 @@ After the report, check gate C. End with one next action the user can do in unde
 
 - Run independent agents in parallel, in one message. Never run two implementers on the same file
   at the same time. Never run `tester` and an implementer at the same time.
-- Never skip one of these steps to save time:
+- In `feature`, `bugfix`, `test`, and `refactor`, never skip one of these steps to save time:
   - the review step
-  - the test step
+  - the test step (not in `test`, see [Shared steps](#shared-steps))
   - the docs step
   - the final suite run
   - the commit step
 - Never report a step as done when its agent reported a failure.
 - Keep every fact from an agent's report: a path, a number, a caveat.
-- Effort:
-  - An agent file can set `effort:` in its frontmatter. The values are `low`, `medium`, `high`,
-    `xhigh`, and `max`.
-  - An `Agent` call can pass `effort`. This needs Claude Code v2.1.292 or later.
-  - An agent with no value uses the session effort.
-  - Claude Haiku 5.5 supports effort levels.
-  - No team agent sets an effort value. All agents use the session effort.
+- Effort: the frontmatter `effort` field (`low` to `max`) and the `Agent` `effort` parameter
+  (Claude Code v2.1.292 or later) set it. No team agent sets it.
 
 
 

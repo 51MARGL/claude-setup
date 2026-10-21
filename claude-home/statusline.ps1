@@ -3,11 +3,15 @@ try {
     [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 } catch {
 }
-$stdin = [Console]::In.ReadToEnd()
-$data = $stdin | ConvertFrom-Json
+$data = $null
+try {
+    $data = [Console]::In.ReadToEnd() | ConvertFrom-Json
+} catch {
+}
 
 $cwd = $data.workspace.current_dir
 if (-not $cwd) { $cwd = $data.cwd }
+if (-not $cwd) { $cwd = (Get-Location).Path }
 $dirName = Split-Path -Leaf $cwd
 $modelName = $data.model.display_name
 
@@ -215,41 +219,48 @@ function Get-SessionTokenTotal {
         $fs = [System.IO.File]::Open($TranscriptPath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
         try {
             $fs.Seek($offset, [System.IO.SeekOrigin]::Begin) | Out-Null
-            $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-            $reader = New-Object System.IO.StreamReader($fs, $utf8NoBom, $false)
-            try {
-                while (-not $reader.EndOfStream) {
-                    $line = $reader.ReadLine()
-                    if ([string]::IsNullOrWhiteSpace($line)) { continue }
-                    try {
-                        $entry = $line | ConvertFrom-Json
-                    } catch {
-                        continue
-                    }
-                    $usage = $entry.message.usage
-                    if (-not $usage) { continue }
-                    $id = $entry.message.id
-                    if (-not $id) { $id = $entry.requestId }
-                    if (-not $id) { continue }
-                    if ($seenIds.ContainsKey($id)) { continue }
-                    $seenIds[$id] = $true
-                    $seenOrder.Add($id)
-
-                    $tokens = [int64]0
-                    if ($usage.input_tokens) { $tokens += [int64]$usage.input_tokens }
-                    if ($usage.cache_creation_input_tokens) { $tokens += [int64]$usage.cache_creation_input_tokens }
-                    if ($usage.cache_read_input_tokens) { $tokens += [int64]$usage.cache_read_input_tokens }
-                    if ($usage.output_tokens) { $tokens += [int64]$usage.output_tokens }
-                    $total += $tokens
-                }
-            } finally {
-                $reader.Dispose()
+            $buffer = New-Object byte[] ($fileLength - $offset)
+            $bytesRead = 0
+            while ($bytesRead -lt $buffer.Length) {
+                $count = $fs.Read($buffer, $bytesRead, $buffer.Length - $bytesRead)
+                if ($count -le 0) { break }
+                $bytesRead += $count
             }
         } finally {
             $fs.Dispose()
         }
-        $offset = $fileLength
-        $stateChanged = $true
+
+        $lastNewlineIndex = -1
+        if ($bytesRead -gt 0) { $lastNewlineIndex = [Array]::LastIndexOf($buffer, [byte]10, $bytesRead - 1) }
+        if ($lastNewlineIndex -ge 0) {
+            $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+            foreach ($line in $utf8NoBom.GetString($buffer, 0, $lastNewlineIndex + 1).Split("`n")) {
+                if ([string]::IsNullOrWhiteSpace($line)) { continue }
+                if (-not $line.Contains('"usage"')) { continue }
+                try {
+                    $entry = $line | ConvertFrom-Json
+                } catch {
+                    continue
+                }
+                $usage = $entry.message.usage
+                if (-not $usage) { continue }
+                $id = $entry.message.id
+                if (-not $id) { $id = $entry.requestId }
+                if (-not $id) { continue }
+                if ($seenIds.ContainsKey($id)) { continue }
+                $seenIds[$id] = $true
+                $seenOrder.Add($id)
+
+                $tokens = [int64]0
+                if ($usage.input_tokens) { $tokens += [int64]$usage.input_tokens }
+                if ($usage.cache_creation_input_tokens) { $tokens += [int64]$usage.cache_creation_input_tokens }
+                if ($usage.cache_read_input_tokens) { $tokens += [int64]$usage.cache_read_input_tokens }
+                if ($usage.output_tokens) { $tokens += [int64]$usage.output_tokens }
+                $total += $tokens
+            }
+            $offset += $lastNewlineIndex + 1
+            $stateChanged = $true
+        }
     }
 
     if ($stateChanged -or -not $cacheExists) {
@@ -285,7 +296,7 @@ function Get-SessionTokenTotal {
 try {
     $sessionTokens = Get-SessionTokenTotal -TranscriptPath $data.transcript_path -SessionId $data.session_id
     if ($sessionTokens -gt 0) {
-        $parts += "${green}$(Format-TokenCount $sessionTokens) tok${reset}"
+        $parts += "${green}session $(Format-TokenCount $sessionTokens) tok${reset}"
     }
 } catch {
     # Any failure here must not break the status line.

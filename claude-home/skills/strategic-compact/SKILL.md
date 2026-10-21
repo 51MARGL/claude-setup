@@ -1,6 +1,6 @@
 ---
 name: strategic-compact
-description: Decide when to ask the user to run /compact at a logical task boundary instead of at an arbitrary auto-compact point. Use after a plan is final, after a milestone, after a debug session, and before a context change.
+description: Use when a [StrategicCompact] hook message appears.
 ---
 
 # Strategic Compact
@@ -19,9 +19,7 @@ of the gates, the blocks, and the decision rules.
 ## Outside an agent chain
 
 When a hook message arrives, ask for a compact at the end of the current answer. Do not ask while a
-block from `orchestrate.md` applies.
-
-These points are the preferred moments:
+block from `orchestrate.md` applies. Ask only after a hook message. Pick the moment from this list:
 
 1. After the plan is final and before the first edit.
 2. After a milestone is done and before the next phase starts.
@@ -49,24 +47,3 @@ context size from the usage of the last reply of the main session. Then it divid
    drop does not reset it.
 
 The hook never compacts anything. It states the size. You decide.
-
-## Configuration
-
-| Variable | Default | Meaning |
-|---|---|---|
-| `COMPACT_CONTEXT_PERCENT` | `15` | The percent of the window for the first message. |
-| `COMPACT_CONTEXT_WINDOW` | `1000000` | The size of the context window in tokens. The hook uses it only when it reads the transcript. Set `200000` for a model without the 1M window. |
-
-Files live in `~/.claude/cache/strategic-compact/`. Each session has two files:
-
-- `<session_id>.json` holds the last reported level. The hook writes it.
-- `<session_id>.context.json` holds the context percent. The status line script writes it.
-
-The hook deletes files older than 7 days.
-
-## Source
-
-Adapted from `WorldFlowAI/everything-claude-code`, skill `strategic-compact`.
-The upstream script counts edits and keys its counter file by the shell process id, so the count
-resets to 1 on every run. This version reads the context percent from the status line, falls back to the transcript, keys its state
-by `session_id`, and runs in PowerShell.
