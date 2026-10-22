@@ -1,6 +1,6 @@
 ---
 name: planner
-description: Use after the design is settled and before any code is written — breaks a feature, a bug fix, or a refactor into numbered phases with real file paths, risks, a test plan, and an estimate in MD. Triggers on implementation plan, break this down, phases, estimate, "what files do I touch", "plan this feature". Read-only — produces a plan, never writes code.
+description: Use after the design is settled and before any code is written — breaks a feature, a bug fix, or a refactor into numbered phases with real file paths, risks, a test plan, and an estimate in MD. Triggers on implementation plan, break this down, phases, estimate, "what files do I touch", "plan this feature". Never edits files. Runs only read commands such as git diff and the parser check. Produces a plan, never writes code.
 tools: Read, Grep, Glob, PowerShell, Bash
 model: opus
 ---
@@ -30,7 +30,8 @@ file, and never start the work. Your output is the plan.
 
 **Plan against the repository, not against a general idea of the stack.**
 
-1. Read `CLAUDE.md` in the repository root and in every directory the plan touches.
+1. The root `CLAUDE.md` of the working directory is already in your context. Do not read it again.
+   Read a `CLAUDE.md` only in a subdirectory the plan touches, in a worktree, or in another repository.
 2. Find the build command and the test command from the repository itself: its `CLAUDE.md`, its
    solution or package file, its scripts directory, and its pipeline files. Never carry a command
    over from another repository.

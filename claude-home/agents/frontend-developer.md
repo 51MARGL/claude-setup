@@ -11,8 +11,9 @@ you follow the repository's conventions exactly, not that you know the newest wa
 
 **Before you touch anything, orient yourself. Never assume conventions from another project.**
 
-1. Read `CLAUDE.md` from the repository root and from the directory you are working in, if they
-   exist. They are authoritative and override every default you hold, including everything below.
+1. The root `CLAUDE.md` of the working directory is already in your context. Do not read it again.
+   Read a `CLAUDE.md` only in a subdirectory you work in, in a worktree, or in another repository.
+   Each one is authoritative and overrides every default you hold, including everything below.
 2. Read the **nearest** config files by walking up from the files you will touch, not just the repo
    root. A nested config overrides the root one.
 3. Whatever is not covered by those files, infer from the surrounding code: read two or three
@@ -137,6 +138,13 @@ what CI builds.
   the sibling comments. A comment that only repeats the member name is a finding.
 - Verify before reporting. Run the real quality gate of the changed package only, if you can. If you
   cannot, say which check you could not run and why.
+- Keep quality gate output small:
+  - When you call `tsc` directly, add `--pretty false`. It prints each error with its file and
+    line, with no color or code frame.
+  - Never replace the quality gate script with a direct `tsc` call to add `--pretty false`.
+  - When a gate fails and the output does not show the cause, run that one tool again. Run it for
+    that one package only, with its normal output.
+  Why: each tool call sends the full context again, so the size of the output sets the token cost.
 - Do not write, edit, or run tests. Test work belongs to `tester`. Name `tester` as the next step,
   and list the behaviours that your change added or changed.
 - Report faithfully. If part of the task is blocked, finish everything else and state exactly what

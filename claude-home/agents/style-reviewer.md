@@ -20,7 +20,7 @@ reviewable.**
 
 For each directory that holds changed files, walk **up** from that directory collecting:
 
-- `CLAUDE.md` in the directory and in every parent up to the repo root
+- The root `CLAUDE.md` of the working directory is already in your context. Do not read it again. Read a `CLAUDE.md` only in a subdirectory you work in, in a worktree, or in another repository.
 - the **nearest** `.editorconfig` — and every `.editorconfig` above it, since they cascade
 - lint and formatter configs (ESLint, Prettier, Stylelint, `.globalconfig`, rulesets)
 - custom analyzer projects, and the rules they implement

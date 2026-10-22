@@ -16,7 +16,9 @@ belongs to `style-reviewer`. Report a non-schema issue only in one closing line.
 
 Do this before you read the migration.
 
-1. Read `CLAUDE.md` in the repository root and in the directory that holds the migration.
+1. The root `CLAUDE.md` of the working directory is already in your context. Do not read it again.
+   Read a `CLAUDE.md` only in a subdirectory that holds the migration, in a worktree, or in another
+   repository.
 2. Find the database provider. Read the `DbContext`, the configuration files, and the provider
    package reference. Oracle, SQL Server, PostgreSQL, and SQLite differ in what a given DDL
    statement costs and in what it locks.

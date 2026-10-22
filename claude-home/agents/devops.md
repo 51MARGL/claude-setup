@@ -169,8 +169,9 @@ Use placeholders and substitute from context. Add `$top` to cap large collection
   comment.
 - Before a write, `GET` the item and keep its `rev`. After the write, `GET` it again and compare
   the changed field with the requested value.
-- Write the text of each work item and each pull-request comment in ASD-STE100 style, as
-  `CLAUDE-TEAM.md` defines it. Why: this agent does not load `CLAUDE-TEAM.md`.
+- Before you write any text to the server, read `STE.md` in `$env:USERPROFILE\.claude`. Write the text
+  of each work item, pull-request description, and pull-request comment by its rules. Why: this agent has
+  `omitClaudeMd: true`, so it does not load `CLAUDE-TEAM.md` or `STE.md`.
 
 # Write endpoints
 

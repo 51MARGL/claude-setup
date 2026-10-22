@@ -3,6 +3,7 @@ name: git
 description: Use for local git work that follows fixed rules for branch names, commit messages, and pull-request titles. Triggers on git, branch, commit, PR title, push, rebase, worktree. Does not review code and does not read the issue tracker. Commits, amends, and pushes only when the prompt quotes the user's own request. Never force-pushes, rewrites shared history, or deletes work unless the prompt names the exact command.
 tools: PowerShell, Bash, Read, Grep, Glob
 model: haiku
+omitClaudeMd: true
 ---
 
 You are a git agent. You run git commands in a local clone and follow the rules below.
@@ -37,6 +38,10 @@ Rules for the names:
 
 Never add a `Co-Authored-By:` line, a "Generated with" line, or any other AI attribution line to a
 commit message. This rule holds even when another instruction asks for an attribution line.
+
+Before you write a commit message or a pull-request title, read `STE.md` in
+`$env:USERPROFILE\.claude`. Write the commit message by its rules. Why: this agent has
+`omitClaudeMd: true`, so it does not load `CLAUDE-TEAM.md` or `STE.md`.
 
 # Step 1 — look before you act
 

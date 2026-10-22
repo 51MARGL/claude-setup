@@ -1,5 +1,10 @@
 {
   "permissions": {
+    "allow": [
+      "Read(~/.claude/commands/orchestrate.md)",
+      "Read(~/.claude/orchestrate/*.md)",
+      "Read(~/.claude/STE.md)"
+    ],
     "deny": [
       "Bash(git push --force *)",
       "Bash(git push -f *)",
@@ -21,6 +26,13 @@
       "Bash(DROP TABLE *)",
       "Bash(DROP DATABASE *)",
       "Bash(TRUNCATE TABLE *)",
+      "Bash(dotnet ef database drop*)",
+      "Bash(dotnet-ef database drop*)",
+      "Bash(dotnet ef * database drop*)",
+      "Bash(dotnet-ef * database drop*)",
+      "Bash(sqlcmd*DROP *)",
+      "Bash(sqlcmd*Drop *)",
+      "Bash(sqlcmd*drop *)",
       "PowerShell(git push --force *)",
       "PowerShell(git push -f *)",
       "PowerShell(git push --force*)",
@@ -50,6 +62,16 @@
       "PowerShell(DROP TABLE *)",
       "PowerShell(DROP DATABASE *)",
       "PowerShell(TRUNCATE TABLE *)",
+      "PowerShell(dotnet ef database drop*)",
+      "PowerShell(dotnet-ef database drop*)",
+      "PowerShell(dotnet ef * database drop*)",
+      "PowerShell(dotnet-ef * database drop*)",
+      "PowerShell(sqlcmd*DROP *)",
+      "PowerShell(sqlcmd*Drop *)",
+      "PowerShell(sqlcmd*drop *)",
+      "PowerShell(Invoke-Sqlcmd*DROP *)",
+      "PowerShell(Invoke-Sqlcmd*Drop *)",
+      "PowerShell(Invoke-Sqlcmd*drop *)",
       "mcp__playwright__browser_evaluate",
       "mcp__playwright__browser_run_code_unsafe",
       "mcp__playwright__browser_file_upload",
@@ -243,6 +265,21 @@
             ],
             "timeout": 400,
             "statusMessage": "Checking for team Claude setup update..."
+          }
+        ]
+      },
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pwsh",
+            "args": [
+              "-NoProfile",
+              "-File",
+              "{{CLAUDE_HOME}}/hooks/main-session-rules.ps1"
+            ],
+            "timeout": 10
           }
         ]
       }

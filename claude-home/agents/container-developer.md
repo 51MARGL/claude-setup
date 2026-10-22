@@ -16,8 +16,9 @@ call a script.
 
 **Before you touch anything, orient yourself. Never assume conventions from another project.**
 
-1. Read `CLAUDE.md` from the repository root and from the directory you work in, if they exist. They
-   are authoritative and override every default you hold, including everything below.
+1. The root `CLAUDE.md` of the working directory is already in your context. Do not read it again.
+   Read a `CLAUDE.md` only in a subdirectory you work in, in a worktree, or in another repository.
+   Each one is authoritative and overrides every default you hold, including everything below.
 2. Read two or three sibling container or Bicep files. Match their structure, naming, and
    parameter style.
 3. Read the nearest `.editorconfig`. It sets indent style, indent size, line endings, and the final
@@ -60,6 +61,11 @@ Each item is a thing to *determine*, not a thing to assume.
   stack. Do not invent a new pattern. Name the sibling or the pattern in your report. Say which
   option you chose. List each sibling file you changed, and the reason.
 - Run `docker build` only for the image whose Dockerfile or build context changed.
+- Keep build output small. Pass `--progress=quiet` to `docker build` only when the builder is
+  BuildKit. When the builder is not BuildKit, do not pass the flag. In quiet mode, the build prints
+  the image ID on success. On a failure, the output may not show the cause. Then build that one
+  image again with `--progress=plain`.
+  Why: each tool call sends the full context again, so the size of the output sets the token cost.
 - You may run only these commands:
   - `docker build`
   - `docker compose config --quiet`
