@@ -153,11 +153,18 @@ The implementer is `dotnet-developer`, `frontend-developer`, `powershell-develop
 run tests. `tester` does all test work, and edits test files only.
 
 The test step and the fix pass re-test run only the relevant tests. The final suite run runs the
-full suite of each test project that the diff touches, and each test project that tests a project
-that the diff touches. It runs each suite once, after the docs step and before the commit step.
+full suite when "The system-wide impact check" in `orchestrate.md` fires. Then it runs the full
+suite of each test project that the diff touches. It also runs the full suite of each test project
+that tests a project that the diff touches. In `refactor`, it also runs the full suite when step 3
+recorded a full-suite baseline.
+
+Otherwise the final suite run runs the relevant tests again when code changed after the last test
+step, or it skips. It runs after the docs step and before the commit step.
+
 Two more `tester` scopes exist. The reproduce scope in `bugfix` runs only the new test, and that
-test must fail. The baseline scope in `refactor` runs the covering tests and the full suites, edits
-no file, and records the counts.
+test must fail. The baseline scope in `refactor` runs the covering tests, edits no file, and
+records the counts. It records full-suite counts only when the impact check fires on the planned
+change.
 
 The browser check step runs in `feature` and `bugfix` only. It runs when all three conditions are
 true:
@@ -281,7 +288,7 @@ team reviews it there, and each member gets it on the next automatic update.
 |---|---|
 | `update.ps1` | The automatic update. Claude Code runs it at session start. See "Automatic updates". |
 | `claude-home\CLAUDE-TEAM.md` | Team global instructions. The installer copies them to `%USERPROFILE%\.claude\CLAUDE-TEAM.md`. They include the writing rules (ASD-STE100), a pointer to the AuDHD output style, and the agent and mistake-log rules for the main session. Read them before you install them. |
-| `claude-home\settings.json` | Permission deny and ask lists, the hooks, the statusline, the model, and the effort level. |
+| `claude-home\settings.json` | Permission deny and ask lists, the hooks, the statusline, the model, the effort level, and the setting that disables the claude.ai connectors. |
 | `claude-home\agents\` | 16 agents: architect, planner, dotnet-developer, frontend-developer, powershell-developer, container-developer, tester, code-reviewer, style-reviewer, security-reviewer, migration-reviewer, docs-updater, devops, pr-reviewer, git, Explore. `architect` and `pr-reviewer` run on opus. `planner` runs on sonnet when the task touches 1 project and fewer than 3 files, and on opus otherwise. `code-reviewer`, `security-reviewer`, and `migration-reviewer` run on sonnet, and `/orchestrate` raises them to opus by the "Reviewer model" rules in `orchestrate.md`. The implementers, `tester`, and `docs-updater` run on sonnet. `devops`, `style-reviewer`, and `git` run on haiku. `Explore` runs on haiku too. It overrides the built-in `Explore` agent, so haiku is the default model of that agent. A caller can still pass another `model` value in the `Agent` call, and that value wins. `/orchestrate` raises `tester` to opus for concurrency tests, for published contracts, or when `tester` asks for it. `/orchestrate` sets the model of each agent that it calls. When you call any other agent yourself, name the model in your request. |
 | `claude-home\commands\orchestrate.md` | The `/orchestrate` command. See the section above. |
 | `claude-home\output-styles\audhd.md` | The AuDHD output style. The installer selects it for you when `settings.json` has no other style. You can also select it with `/config` → Output style. |
@@ -294,6 +301,9 @@ team reviews it there, and each member gets it on the next automatic update.
 ## MCP servers
 
 The installer adds three MCP servers at user scope. See step 7 of "What the installer does".
+
+The team settings disable the claude.ai connectors with `"disableClaudeAiConnectors": true`. To
+enable the connectors again, set `"disableClaudeAiConnectors": false` in your own `settings.json`.
 
 | Server | Type | Use |
 |---|---|---|

@@ -185,7 +185,9 @@ If `tester` finds that production code is wrong, stop the chain. Print the failu
 3. `tester` — the baseline scope. Add no test. Record two sets of counts:
    - the counts of the tests that cover the code from step 1
    - the counts of the full suite of each test project from the scope in [The final suite
-     run](#the-final-suite-run--tester)
+     run](#the-final-suite-run--tester). Record them only when [The system-wide impact
+     check](#the-system-wide-impact-check) fires on the planned change. No diff exists yet, so decide
+     from the `architect` and `Explore` output.
 4. Implementer — make the change with no behaviour change.
 5. `tester` — the test step. Run the covering tests from step 3. The counts must match the
    covering-test baseline.
@@ -194,7 +196,10 @@ If `tester` finds that production code is wrong, stop the chain. Print the failu
 7. Fix pass — see [The fix pass](#the-fix-pass).
 8. `docs-updater` — the docs step.
 9. `tester` — the final suite run. See [The final suite run](#the-final-suite-run--tester). Its
-   counts must match the full-suite baseline from step 3.
+   counts must match the full-suite baseline from step 3. When step 3 recorded a full-suite
+   baseline, run the full suite, also when the check does not fire on the diff. Otherwise compare
+   the counts with the covering-test baseline. When the diff fires the impact check but step 3
+   recorded no full-suite counts, run the full suite. Write "no baseline" in the final report.
 10. `git` — the commit step.
 
 ### review
@@ -299,6 +304,42 @@ added.
 Print each guard that fired, and the reason in one clause, in the step line of the review step.
 `pr-reviewer` holds the same two conditions. Keep the two texts identical when you change one.
 
+### The system-wide impact check
+
+The main session decides this check from the diff, like the guards. Run `git diff --name-only`. Read
+the hunks that you need. Decide before the final suite run.
+
+Before a diff exists, as in `refactor` step 3, the main session decides from the planned change. It
+uses the `architect` and `Explore` output.
+
+The check fires when the diff changes one of these:
+
+- (a) a project that 2 or more other projects reference
+- (b) a build or package file:
+  - `Directory.Build.props`
+  - `Directory.Packages.props`
+  - `global.json`
+  - a solution file
+  - the dependencies in `package.json`
+  - a lock file
+- (c) startup, DI registration, or middleware that all endpoints use, such as:
+  - `Program.cs`
+  - `Startup.cs`
+  - the DI extension methods
+- (d) one of these:
+  - a message contract
+  - a public API contract
+  - a database schema
+- (e) shared test code
+
+Print `full suite: <criterion>` or `relevant tests: no criterion fired` in the step line of the final
+suite run.
+
+This section is the only copy of the criteria. `tester.md` and `README.md` point here.
+
+Why: the full suite costs the most tokens, and only a shared change can break a test that no earlier
+step ran.
+
 ### The test step — `tester`
 
 Run it after an implementer, before the review step that follows.
@@ -307,6 +348,7 @@ Run it after an implementer, before the review step that follows.
    from `planner` when one exists.
 2. Tell it to edit test files only.
 3. Tell it to run the new tests and the tests that cover the change. It never runs the full suite.
+   Tell it to use a test filter and minimal output. See `tester`, "Keep test output small".
 4. Put its counts (passed, failed, skipped) in the step line.
 5. If a test fails because of production code, send the failure to the implementer, then run the
    test step again. See [The fix pass](#the-fix-pass) for the count.
@@ -375,7 +417,8 @@ A review step can return two kinds of findings. Route each finding to its owner:
 
 Run the implementer first when both have findings. After the implementer changed code, run the test
 step again, with only the relevant tests: the failed tests, the new tests, and the tests that cover
-the fixed code. Never run the full suite in a fix pass. Also run the browser check step again when
+the fixed code. Tell `tester` to use a test filter and minimal output. See `tester`, "Keep test output
+small". Never run the full suite in a fix pass. Also run the browser check step again when
 that step ran before.
 
 When `security-reviewer` or `migration-reviewer` returned a blocking finding, run that reviewer
@@ -387,11 +430,21 @@ each non-blocking finding in the "Non-blocking findings" section of the final re
 
 ### The final suite run — `tester`
 
-Run it once, at the end of the chain. Run it after the review step, the fix pass, and the docs
+Run it at most once, at the end of the chain. Run it after the review step, the fix pass, and the docs
 step, and before the commit step. It runs also when no fix pass ran.
 
-1. Tell `tester` to run the full suite of each test project that the diff touches, and each test
-   project that tests a project that the diff touches.
+1. Decide by [The system-wide impact check](#the-system-wide-impact-check). Use the first case that
+   fits:
+   - In `refactor`, step 3 recorded a full-suite baseline: tell `tester` to run the full suite. Name the full-suite baseline from step 3 as the reason.
+   - The check fired: tell `tester` to run the full suite of each test project that the diff
+     touches. Also tell it to run the full suite of each test project that tests a project that the
+     diff touches.
+   - Code changed after the last test step: tell `tester` to run the relevant tests again. Give it
+     the union of the scopes of the earlier test steps.
+   - Otherwise: skip the run. Print one line that gives the reason.
+
+   In the `test` workflow, the `tester` step 2 and the fix pass count as test steps, and a test file
+   counts as code.
 2. Tell it to edit no file.
 3. Put its counts (passed, failed, skipped) in the step line.
 4. If the suite fails because of production code, do these steps in order:
@@ -406,8 +459,9 @@ step, and before the commit step. It runs also when no fix pass ran.
 
 If `planner` or `tester` reported that the repository has no tests, skip this step.
 
-Why: the test step and the fix pass run only the relevant tests. This step finds a break in a
-test that no earlier step ran.
+Why: the test step and the fix pass run only the relevant tests. The full suite finds a break in a
+test that no earlier step ran, and only a system-wide change can cause that break. Other changes need
+at most one more run of the relevant tests.
 
 ### The branch step — `git`
 
@@ -587,8 +641,9 @@ Stop the chain and report, when:
 - `tester` cannot reproduce the bug in the `bugfix` workflow. Do not fix a bug that no test or
   reproduction shows.
 - The test counts after a refactor do not match the baseline, and the fix pass already ran once.
-  This applies to the covering-test counts of the test step and to the full-suite counts of the
-  final suite run. Each set has its own baseline from step 3.
+  This applies to the covering-test counts of the test step. It applies to the full-suite counts of
+  the final suite run only when step 3 recorded a full-suite baseline. Each set has its own baseline
+  from step 3.
 - The browser check fails again after one fix pass.
 - The user interrupts.
 - `architect` returned two viable options with a real trade-off. The choice is the user's. Print

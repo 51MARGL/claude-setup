@@ -85,15 +85,33 @@ Check each item in the repository. Never assume it.
   external client, do not refactor it. Report the seam that the implementer must add.
 - Run only the tests that the prompt scope names. When the prompt names no scope, use the test step:
   - The reproduce scope: run only the new test. It must fail for the reason in the bug report.
-  - The baseline scope: run the tests that cover the code. In the final suite scope, also run the
-    full suite. Edit no file. Record the counts (passed, failed, skipped).
+  - The baseline scope: run the covering tests. Run the full suite only when the prompt says that
+    the change has system-wide impact. Edit no file. Record the counts (passed, failed, skipped).
   - The test step: run the new tests and the tests that cover the change. Never run the full suite.
   - The fix pass re-test: run the failed tests, the new tests, and the tests that cover the fixed
     code. Never run the full suite.
-  - The final suite run: run the full suite of each test project that the diff touches, and each
-    test project that tests a project that the diff touches. Run each once. Edit no file.
+  - The final suite run: run the full suite only when the prompt says that the change has
+    system-wide impact, or when the prompt names a full-suite baseline from the refactor step 3. Then run the full suite of each test project that the diff touches. Also run
+    the full suite of each test project that tests a project that the diff touches. Otherwise run
+    the relevant tests that the prompt names. Run each once. Edit no file.
+
+  The criteria for system-wide impact are in `orchestrate.md`, section "The system-wide impact
+  check". The main session decides the check and states the result in the prompt.
 
   Name what you did not run, and why.
+- Keep test output small:
+  - Build once after each change to a test file or a production file. Then run
+    `dotnet test --no-build --filter <FullyQualifiedName~...>`.
+  - A filter that matches zero tests is a failure. Report it.
+  - Use `--logger "console;verbosity=minimal"`. Show only the summary and the failures.
+  - Use `jest --findRelatedTests <files>` or `vitest related <files> --run`, with `--silent`.
+  - Use `Invoke-Pester -Path <file> -Output Normal` (Pester 5). Never use `Detailed`.
+  - Use one command for each test project. Never run a `foreach` loop over projects in one call.
+    Never use one call for each test.
+  - Never run the same passing command twice. This rule does not apply to the flaky-test runs.
+
+  Why: each tool call sends the full context again, so the number of calls and the size of the
+  output set the token cost.
 - A flaky test: run it at least 5 times. Report how many runs failed, and the cause you found. Do not
   add a retry to hide it.
 - Do not claim coverage that you did not create or run.
