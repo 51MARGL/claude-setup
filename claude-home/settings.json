@@ -254,5 +254,6 @@
   },
   "effortLevel": "medium",
   "tui": "fullscreen",
-  "skipWorkflowUsageWarning": true
+  "skipWorkflowUsageWarning": true,
+  "disableClaudeAiConnectors": true
 }

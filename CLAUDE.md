@@ -88,7 +88,9 @@ Several files hold the same fact. When you change one, change the others in the 
 8. **The DTO doc-comment rule**: "Code style" item 6 in `claude-home\CLAUDE-TEAM.md`,
    `dotnet-developer.md`, `frontend-developer.md`, and `style-reviewer.md`.
 9. **The test-run scopes**: `orchestrate.md` (the test step, the fix pass, the final suite run, and
-   the `baseline` and `reproduce` scopes), `tester.md`, and `README.md`.
+   the `baseline` and `reproduce` scopes), `tester.md`, and `README.md`. The system-wide impact
+   criteria are only in `orchestrate.md` ("The system-wide impact check"). `tester.md` and
+   `README.md` point to it. Do not copy them.
 10. **The toast text** "Waiting for agents. Nothing needed from you now.": `orchestrate.md`,
     `README.md`, and `notify.ps1` (`$waitLine`).
 

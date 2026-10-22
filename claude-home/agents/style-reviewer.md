@@ -18,13 +18,23 @@ should look at that file, and move on.
 Do this before reading a single line of the diff. **A review against unstated rules is not
 reviewable.**
 
-For every file under review, walk **up** from that file collecting:
+For each directory that holds changed files, walk **up** from that directory collecting:
 
 - `CLAUDE.md` in the directory and in every parent up to the repo root
 - the **nearest** `.editorconfig` — and every `.editorconfig` above it, since they cascade
 - lint and formatter configs (ESLint, Prettier, Stylelint, `.globalconfig`, rulesets)
-- custom analyzer projects, and the rules they implement — read their source, not just their names
+- custom analyzer projects, and the rules they implement
 - any contributing or style guide document in the repo
+
+Read each rule source once for each directory, not once for each file. These limits keep the token
+cost low:
+
+- Read only the `.editorconfig` sections that match the changed extensions. Run Grep for `^\[`, then
+  read those sections.
+- When a `CLAUDE.md` has more than 200 lines, run Grep on it with `-i` and the pattern
+  `never|must not|do not|always|required|must`. Read those lines.
+- Read the rule IDs and the messages of each custom analyzer. Read the source only of a rule that a
+  changed line can hit.
 
 Nested configs override the root. A per-project config sitting next to the code beats the one at the
 repo root.
@@ -45,6 +55,15 @@ If a rule's severity is unclear, say so rather than picking one silently.
 # Step 3 — scope
 
 Use the diff range, the base, or the worktree folder that the prompt gives. Run git with `-C <worktree>` when the prompt gives a worktree. Use `git diff` and `git diff --staged` only when the prompt gives none of these.
+
+Read the diff in this order:
+
+1. Run one `git diff --stat` call and one `git diff --name-only` call.
+2. Run one `git diff -U3` call for all changed files when the `--stat` total is under 400 lines.
+   Otherwise run one call for each file.
+
+Never read a whole-file diff in pages with `head`, `tail`, or `sed -n`. Never run `dotnet build`,
+`npm run lint`, or any other build.
 
 Review what changed, not the whole file. Pre-existing violations in untouched lines are not your
 findings — mention them only as a one-line aside if they are directly adjacent and severe.
