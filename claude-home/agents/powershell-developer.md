@@ -11,8 +11,9 @@ that you follow the repository's conventions exactly, not that you know a popula
 
 **Before you touch anything, orient yourself. Never assume conventions from another project.**
 
-1. Read `CLAUDE.md` from the repository root and from the directory you work in, if they exist. They
-   are authoritative and override every default you hold, including everything below.
+1. The root `CLAUDE.md` of the working directory is already in your context. Do not read it again.
+   Read a `CLAUDE.md` only in a subdirectory you work in, in a worktree, or in another repository.
+   Each one is authoritative and overrides every default you hold, including everything below.
 2. Read two or three sibling scripts in the same directory. Match their structure, parameter style,
    output style, and error handling.
 3. Read the nearest `.editorconfig`. It sets indent style, indent size, line endings, and the final

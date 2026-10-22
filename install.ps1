@@ -101,6 +101,16 @@ try {
         return $matcher
     }
 
+    function Remove-TeamUpdateHook {
+        param([System.Collections.IDictionary]$TeamSettings, [string]$UpdateScriptPath)
+
+        $keptGroups = @(foreach ($group in @($TeamSettings['hooks']['SessionStart'])) {
+            $group['hooks'] = @(@($group['hooks']) | Where-Object { @($_['args'])[-1] -ne $UpdateScriptPath })
+            if ($group['hooks'].Count -gt 0) { $group }
+        })
+        if ($keptGroups.Count -gt 0) { $TeamSettings['hooks']['SessionStart'] = $keptGroups } else { $TeamSettings['hooks'].Remove('SessionStart') }
+    }
+
     function Merge-Settings {
         param([System.Collections.IDictionary]$Existing, [System.Collections.IDictionary]$Team)
 
@@ -108,7 +118,7 @@ try {
 
         if ($Team.Contains('permissions')) {
             if (-not $merged.Contains('permissions')) { $merged['permissions'] = [ordered]@{} }
-            foreach ($listName in 'deny', 'ask') {
+            foreach ($listName in 'allow', 'deny', 'ask') {
                 if ($Team['permissions'].Contains($listName)) {
                     $merged['permissions'][$listName] = Merge-UniqueList -Existing $merged['permissions'][$listName] -Team $Team['permissions'][$listName]
                 }
@@ -301,7 +311,7 @@ try {
         $teamSettingsText = (Get-Content -LiteralPath $SourcePath -Raw).Replace($placeholder, $targetRootForwardSlashes).Replace($repoPlaceholder, $repoRootForwardSlashes)
         $teamSettings = $teamSettingsText | ConvertFrom-Json -AsHashtable
         if ($SkipStatusLine) { $teamSettings.Remove('statusLine') }
-        if ($SkipAutoUpdate) { $teamSettings['hooks'].Remove('SessionStart') }
+        if ($SkipAutoUpdate) { Remove-TeamUpdateHook -TeamSettings $teamSettings -UpdateScriptPath ($repoRootForwardSlashes + '/update.ps1') }
         if ($OutputStyle) { $teamSettings['outputStyle'] = $OutputStyle }
 
         $existingText = $null

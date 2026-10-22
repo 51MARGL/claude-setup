@@ -28,7 +28,7 @@ The rule that you break most often is plain words (rule 2). Check it every time 
 
 ## Write in Simplified Technical English (ASD-STE100) — IMPORTANT
 
-The STE rules are in `CLAUDE-TEAM.md`. They apply to every message, every explanation, and every
+The STE rules are in `STE.md`. They apply to every message, every explanation, and every
 commit message. The examples below use its rule numbers.
 
 The user reads from the position of a technician with a manual and no author to call. An
@@ -242,7 +242,7 @@ Override the defaults when:
 Before you send, delete:
 
 1. The first sentence if it only announces what you are about to do. Keep the one-clause line
-   that `CLAUDE-TEAM.md` requires. It says whether you run a chain or work inline.
+   that `CLAUDE-MAIN.md` requires. It says whether you run a chain or work inline.
 2. The last sentence if it asks "anything else?" or recaps what just happened.
 3. Any "by the way" sidebar.
 4. Any hype word, emoji, exclamation mark, idiom, metaphor, or hedge that adds no

@@ -21,7 +21,7 @@ Run this in PowerShell 7.2 or later in the clone:
 | `-SkipStatusLine` | Do not install the statusline. |
 | `-SkipMcp` | Do not add the MCP servers. |
 | `-SkipOutputStyle` | Do not set `outputStyle`. |
-| `-SkipAutoUpdate` | Do not add the `SessionStart` hook for automatic updates. The switch does not remove a hook that exists. See "Automatic updates". |
+| `-SkipAutoUpdate` | Do not add the `update.ps1` `SessionStart` hook for automatic updates. The installer still adds the `main-session-rules.ps1` `SessionStart` hook. The switch does not remove a hook that exists. See "Automatic updates". |
 | `-UseSavedSwitches` | Use the switches of the last manual run. `update.ps1` uses this switch. You cannot combine it with a `-Skip` switch. |
 | `-WhatIf` | Show the changes. Change nothing. |
 
@@ -45,21 +45,24 @@ The script does this:
 1. It runs at most once every 60 minutes.
 2. It runs only when the clone is on `master`, has no uncommitted changes, and has no untracked
    file in `claude-home`. It also needs a saved install state from a manual `install.ps1` run.
-3. It fetches `origin/master`.
-4. It fast-forwards the clone when `origin/master` has new commits.
+3. It fetches `origin/master`. When the fetch fails or times out, the update stops with the
+   `git-failed` message. A failed or timed-out `git rev-list` or `git rev-parse` stops it the same
+   way. `install.ps1` does not run in these cases.
+4. It fast-forwards the clone when `origin/master` has new commits. When the fast-forward times
+   out, the update stops with the `merge-failed` message. `install.ps1` does not run in this case.
 5. It runs `install.ps1` with your saved switches when the clone has a commit that is not installed yet.
 6. It writes a log to `%USERPROFILE%\.claude\team-setup\update.log`.
 7. It shows the result message, for success or failure, in Claude Code. It does not give the message to Claude.
 
-The script writes only to `update.log` and shows no message when no check is due, when no install
-state exists, or when the fetch fails.
+The script writes only to `update.log` and shows no message when no check is due, or when no install
+state exists.
 
 When a check stops the update, the script shows the stop message once per 24 hours for each reason.
 The reasons are: the clone is not on `master`, the clone has uncommitted changes, the clone has
 untracked files in `claude-home`, a git command failed or timed out, the fast-forward failed, and
 `install.ps1` failed. The script records the last stop message in
 `%USERPROFILE%\.claude\team-setup\update-last-stop.json`. It deletes this file only when the update
-succeeds. A failed fetch keeps the file.
+succeeds.
 
 The script keeps the time of the last check in `%USERPROFILE%\.claude\team-setup\update-last-check.txt`.
 The file holds an ISO 8601 time with an offset, for example `2026-09-30T14:05:00.0000000+02:00`.
@@ -109,8 +112,17 @@ Protect your machine with these steps:
 
 Before each merge, the update writes the list of new commits and the changed files to
 `%USERPROFILE%\.claude\team-setup\update.log`. The message in Claude Code names the number of new
-commits. It also names `install.ps1`, `update.ps1`, `claude-home/settings.json`,
-`claude-home/CLAUDE-TEAM.md`, or `mcp/servers.json` when a new commit changes them.
+commits. It also names a file when a new commit changes it. The message can name these files:
+
+1. The files that run code: `install.ps1`, `update.ps1`, `claude-home/hooks/main-session-rules.ps1`,
+   `claude-home/hooks/notify.ps1`, `claude-home/statusline.ps1`, and
+   `claude-home/skills/strategic-compact/suggest-compact.ps1`.
+2. The files that set permissions, hooks, tools, or the model: `claude-home/settings.json`,
+   `mcp/servers.json`, and the 16 agent files `claude-home/agents/<name>.md`.
+3. The rules that the main session loads or follows: `claude-home/CLAUDE-TEAM.md`,
+   `claude-home/CLAUDE-MAIN.md`, `claude-home/STE.md`, `claude-home/commands/orchestrate.md`, the 8
+   files `claude-home/orchestrate/<name>.md`, `claude-home/output-styles/audhd.md`,
+   `claude-home/skills/mistakes-log/SKILL.md`, and `claude-home/skills/strategic-compact/SKILL.md`.
 
 ## Use `/orchestrate` for bigger tasks
 
@@ -153,7 +165,7 @@ The implementer is `dotnet-developer`, `frontend-developer`, `powershell-develop
 run tests. `tester` does all test work, and edits test files only.
 
 The test step and the fix pass re-test run only the relevant tests. The final suite run runs the
-full suite when "The system-wide impact check" in `orchestrate.md` fires. Then it runs the full
+full suite when "The system-wide impact check" in `shared-steps.md` fires. Then it runs the full
 suite of each test project that the diff touches. It also runs the full suite of each test project
 that tests a project that the diff touches. In `refactor`, it also runs the full suite when step 3
 recorded a full-suite baseline.
@@ -192,10 +204,11 @@ commit step commits only when you asked for a commit. Otherwise it writes the co
 the pull-request title into the final report, and commits nothing.
 
 Do not use `/orchestrate` for a task that needs no agent chain. Ask Claude directly instead. The
-list of these tasks is in `claude-home\CLAUDE-TEAM.md`, section "Orchestrate multi-step work
+list of these tasks is in `claude-home\CLAUDE-MAIN.md`, section "Orchestrate multi-step work
 yourself". Claude sends a git operation to the `git` agent. See the next section.
 
-The full rules are in `claude-home\commands\orchestrate.md`.
+The full rules are in `claude-home\commands\orchestrate.md` and in the workflow files in
+`claude-home\orchestrate\`.
 
 ## Git work
 
@@ -235,7 +248,7 @@ is needed, it tells you to run the command yourself with `!`.
 
 Claude logs its own mistakes in `%USERPROFILE%\.claude\MISTAKES.md`. Each entry holds what
 happened, the root cause, the consequence, and the rule that prevents a repeat. The newest entry
-is first. The triggers are in the "Mistakes log" section of `claude-home\CLAUDE-TEAM.md`. The
+is first. The triggers are in the "Mistakes log" section of `claude-home\CLAUDE-MAIN.md`. The
 entry format and the rule for a repeat are in the `mistakes-log` skill.
 
 The file is yours:
@@ -245,7 +258,7 @@ The file is yours:
 - Each team member has their own file.
 
 When the same root cause appears 3 times, Claude asks you whether to make it a rule. A team rule
-goes into `claude-home\CLAUDE-TEAM.md` or an agent file in this repository, through a pull request. The
+goes into `claude-home\CLAUDE-TEAM.md`, `claude-home\CLAUDE-MAIN.md`, or an agent file in this repository, through a pull request. The
 team reviews it there, and each member gets it on the next automatic update.
 
 ## What the installer does
@@ -255,7 +268,8 @@ team reviews it there, and each member gets it on the next automatic update.
    hooks and permission rules stay, and the team entries are added once.
 3. It merges the `env` block key by key. It adds only the keys that you do not have, and it keeps
    the values that you set.
-4. It writes your own profile path into the hook paths and the statusline path.
+4. It writes your own profile path into the statusline path and into the hook paths that use
+   `{{CLAUDE_HOME}}`. It writes the clone path into the `update.ps1` hook path.
 5. It sets `outputStyle` to `AuDHD` in `settings.json` when the value there is missing or `default`.
    It keeps any other style that you set there. This is the user-level default. A style that you
    choose in `/config` for a project stays in that project's `.claude\settings.local.json` and
@@ -286,14 +300,19 @@ team reviews it there, and each member gets it on the next automatic update.
 
 | Path | What it is |
 |---|---|
+| `install.ps1` | The installer. It copies `claude-home\` to `%USERPROFILE%\.claude` and merges `settings.json`. See "First install". |
 | `update.ps1` | The automatic update. Claude Code runs it at session start. See "Automatic updates". |
-| `claude-home\CLAUDE-TEAM.md` | Team global instructions. The installer copies them to `%USERPROFILE%\.claude\CLAUDE-TEAM.md`. They include the writing rules (ASD-STE100), a pointer to the AuDHD output style, and the agent and mistake-log rules for the main session. Read them before you install them. |
-| `claude-home\settings.json` | Permission deny and ask lists, the hooks, the statusline, the model, the effort level, and the setting that disables the claude.ai connectors. |
-| `claude-home\agents\` | 16 agents: architect, planner, dotnet-developer, frontend-developer, powershell-developer, container-developer, tester, code-reviewer, style-reviewer, security-reviewer, migration-reviewer, docs-updater, devops, pr-reviewer, git, Explore. `architect` and `pr-reviewer` run on opus. `planner` runs on sonnet when the task touches 1 project and fewer than 3 files, and on opus otherwise. `code-reviewer`, `security-reviewer`, and `migration-reviewer` run on sonnet, and `/orchestrate` raises them to opus by the "Reviewer model" rules in `orchestrate.md`. The implementers, `tester`, and `docs-updater` run on sonnet. `devops`, `style-reviewer`, and `git` run on haiku. `Explore` runs on haiku too. It overrides the built-in `Explore` agent, so haiku is the default model of that agent. A caller can still pass another `model` value in the `Agent` call, and that value wins. `/orchestrate` raises `tester` to opus for concurrency tests, for published contracts, or when `tester` asks for it. `/orchestrate` sets the model of each agent that it calls. When you call any other agent yourself, name the model in your request. |
+| `claude-home\CLAUDE-TEAM.md` | Team global instructions. The installer copies them to `%USERPROFILE%\.claude\CLAUDE-TEAM.md`. They include a pointer to the AuDHD output style, the import of `STE.md`, the work item effort rule, and the code style rules. Read them before you install them. |
+| `claude-home\STE.md` | The writing rules (ASD-STE100). `CLAUDE-TEAM.md` imports this file, so the main session and each agent load it. The `devops`, `git`, and `pr-reviewer` agents have `omitClaudeMd: true`, so they read this file themselves. |
+| `claude-home\CLAUDE-MAIN.md` | The agent rules and the mistake-log rules for the main session only. The hook `main-session-rules.ps1` prints this file at session start. A subagent does not get it. |
+| `claude-home\settings.json` | Permission allow, deny, and ask lists, the hooks, the statusline, the model, the effort level, and the setting that disables the claude.ai connectors. |
+| `claude-home\agents\` | 16 agents: architect, planner, dotnet-developer, frontend-developer, powershell-developer, container-developer, tester, code-reviewer, style-reviewer, security-reviewer, migration-reviewer, docs-updater, devops, pr-reviewer, git, Explore. `architect` runs on opus. `pr-reviewer` runs on sonnet. `planner` runs on sonnet when the task touches 1 project and fewer than 3 files, and on opus otherwise. `code-reviewer`, `security-reviewer`, and `migration-reviewer` run on sonnet, and `/orchestrate` raises them to opus by the "Reviewer model" rules in `orchestrate.md`. The implementers, `tester`, and `docs-updater` run on sonnet. `devops`, `style-reviewer`, and `git` run on haiku. `Explore` runs on haiku too. It overrides the built-in `Explore` agent, so haiku is the default model of that agent. A caller can still pass another `model` value in the `Agent` call, and that value wins. `/orchestrate` raises `tester` to opus for concurrency tests, for published contracts, or when `tester` asks for it. `/orchestrate` sets the model of each agent that it calls. When you call any other agent yourself, name the model in your request. |
 | `claude-home\commands\orchestrate.md` | The `/orchestrate` command. See the section above. |
+| `claude-home\orchestrate\` | The workflow files of `/orchestrate`: one file for each workflow, and `shared-steps.md` with the steps that several workflows share. `/orchestrate` reads only the files of the chosen workflow. The folder is not under `commands\`, so it adds no slash command. |
 | `claude-home\output-styles\audhd.md` | The AuDHD output style. The installer selects it for you when `settings.json` has no other style. You can also select it with `/config` → Output style. |
 | `claude-home\skills\strategic-compact\` | The skill and the `UserPromptSubmit` and `PostToolUse` hooks that suggest `/compact` at 15% of the window, then at each further 10%. The hooks read the context size from the file that `statusline.ps1` writes. When that file is missing or older than 10 minutes, they read the transcript. Set `COMPACT_CONTEXT_PERCENT` (default `15`) and `COMPACT_CONTEXT_WINDOW` (default `1000000` tokens, used only when the hooks read the transcript, so set `200000` for a model without the 1M window) to change the values. When the context falls below 15%, for example after `/compact`, the hooks start again. The state is in `~/.claude/cache/strategic-compact/`. Each session has `<session_id>.json` (the last reported level, written by the hook) and `<session_id>.context.json` (the context percent, written by `statusline.ps1`). The hook deletes files older than 7 days. The skill is adapted from `WorldFlowAI/everything-claude-code`. The upstream script counts edits and keys its counter by the shell process id. This version reads the status line file, falls back to the transcript, keys its state by `session_id`, and runs in PowerShell. |
 | `claude-home\skills\mistakes-log\` | The skill that holds the entry format, the repeat rule, and the graduation steps for `MISTAKES.md`. |
+| `claude-home\hooks\main-session-rules.ps1` | The `SessionStart` hook that prints `CLAUDE-MAIN.md` as context in the main session. It runs at start, resume, clear, and compact. It prints nothing in a subagent. When the file is missing or the read fails, it shows a message that the rules did not load. |
 | `claude-home\hooks\notify.ps1` | The hook that shows a Windows toast when Claude needs you. See the next section. |
 | `claude-home\statusline.ps1` | The statusline script. It shows the context percent as `ctx N%` and the session tokens as `session <N> tok`. It also writes the context size of the session for the strategic-compact hooks. |
 | `mcp\servers.json` | User-scope MCP servers: `microsoft-learn` (http), `playwright` (stdio, `cmd /c npx -y @playwright/mcp@latest --headless --isolated --browser msedge --output-dir %TEMP%\playwright-mcp`), and `context7` (http, no key). See "MCP servers". |

@@ -16,8 +16,9 @@ fails because of production code, you report it, and the implementer fixes it.
 
 **Before you write a test, orient yourself. Never assume test conventions from another project.**
 
-1. Read `CLAUDE.md` from the repository root and from the directory you work in, if they exist. They
-   override every default below.
+1. The root `CLAUDE.md` of the working directory is already in your context. Do not read it again.
+   Read a `CLAUDE.md` only in a subdirectory you work in, in a worktree, or in another repository.
+   Each one overrides every default below.
 2. Find out whether the repository has tests at all. Several repositories here have none. If it has
    none, stop and say so plainly. Do not add a test framework unless the prompt asks for one.
 3. Find the test command from the repository itself: its `CLAUDE.md`, its solution or package file,
@@ -95,8 +96,9 @@ Check each item in the repository. Never assume it.
     the full suite of each test project that tests a project that the diff touches. Otherwise run
     the relevant tests that the prompt names. Run each once. Edit no file.
 
-  The criteria for system-wide impact are in `orchestrate.md`, section "The system-wide impact
-  check". The main session decides the check and states the result in the prompt.
+  The criteria for system-wide impact are in `~/.claude/orchestrate/shared-steps.md`, section "The
+  system-wide impact check". The main session decides the check and states the result in the
+  prompt.
 
   Name what you did not run, and why.
 - Keep test output small:

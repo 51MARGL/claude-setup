@@ -25,7 +25,47 @@ $gitPath = $null
 $lock = $null
 $mergedCommitCount = 0
 $changedSensitivePaths = @()
-$sensitivePaths = @('install.ps1', 'update.ps1', 'claude-home/settings.json', 'claude-home/CLAUDE-TEAM.md', 'mcp/servers.json')
+$sensitivePaths = @(
+    'install.ps1',
+    'update.ps1',
+    'claude-home/settings.json',
+    'claude-home/CLAUDE-TEAM.md',
+    'claude-home/CLAUDE-MAIN.md',
+    'claude-home/STE.md',
+    'mcp/servers.json',
+    'claude-home/hooks/main-session-rules.ps1',
+    'claude-home/hooks/notify.ps1',
+    'claude-home/statusline.ps1',
+    'claude-home/skills/strategic-compact/suggest-compact.ps1',
+    'claude-home/commands/orchestrate.md',
+    'claude-home/orchestrate/design.md',
+    'claude-home/orchestrate/feature.md',
+    'claude-home/orchestrate/bugfix.md',
+    'claude-home/orchestrate/test.md',
+    'claude-home/orchestrate/refactor.md',
+    'claude-home/orchestrate/review.md',
+    'claude-home/orchestrate/custom.md',
+    'claude-home/orchestrate/shared-steps.md',
+    'claude-home/output-styles/audhd.md',
+    'claude-home/skills/mistakes-log/SKILL.md',
+    'claude-home/skills/strategic-compact/SKILL.md',
+    'claude-home/agents/architect.md',
+    'claude-home/agents/planner.md',
+    'claude-home/agents/dotnet-developer.md',
+    'claude-home/agents/frontend-developer.md',
+    'claude-home/agents/powershell-developer.md',
+    'claude-home/agents/container-developer.md',
+    'claude-home/agents/tester.md',
+    'claude-home/agents/code-reviewer.md',
+    'claude-home/agents/style-reviewer.md',
+    'claude-home/agents/security-reviewer.md',
+    'claude-home/agents/migration-reviewer.md',
+    'claude-home/agents/docs-updater.md',
+    'claude-home/agents/devops.md',
+    'claude-home/agents/pr-reviewer.md',
+    'claude-home/agents/git.md',
+    'claude-home/agents/explore.md'
+)
 
 function Write-UpdateLog {
     param([string]$Level, [string]$Text)
@@ -171,6 +211,7 @@ function Update-TeamSetup {
     $script:gitPath = $gitCommand.Source
 
     $gitFailedText = "Team Claude setup auto-update skipped: git failed in the clone at $repoRoot. See $logPath."
+    $mergeFailedText = "Team Claude setup auto-update failed: git could not fast-forward the clone at $repoRoot. See $logPath."
 
     $branch = Invoke-Git @('symbolic-ref', '--quiet', '--short', 'HEAD')
     if ($branch.TimedOut -or $branch.ExitCode -notin 0, 1) {
@@ -211,32 +252,43 @@ function Update-TeamSetup {
     $mergeFailed = $false
     $headBeforeMerge = $null
     $fetch = Invoke-Git @('fetch', 'origin', 'master') -TimeoutSeconds $FetchTimeoutSeconds
-    if ($fetch.ExitCode -ne 0) {
+    if ($fetch.TimedOut -or $fetch.ExitCode -ne 0) {
         Write-UpdateLog 'WARN' "git fetch failed: $(Get-FailureText $fetch)"
-    } else {
-        $behind = Invoke-Git @('rev-list', '--count', 'HEAD..origin/master')
-        if ($behind.ExitCode -ne 0) {
-            Write-UpdateLog 'WARN' "git rev-list failed: $(Get-FailureText $behind)"
-        } elseif ([int]$behind.Output.Trim() -gt 0) {
-            $incomingCommits = Invoke-Git @('log', '--oneline', 'HEAD..origin/master')
-            $headBeforeMergeResult = Invoke-Git @('rev-parse', 'HEAD')
-            if ($headBeforeMergeResult.ExitCode -eq 0) { $headBeforeMerge = $headBeforeMergeResult.Output.Trim() }
-            Write-UpdateLog 'INFO' "Incoming commits:`n$($incomingCommits.Output.Trim())"
-            $incomingCommitCount = [int]$behind.Output.Trim()
-            $merge =Invoke-Git @('merge', '--ff-only', 'origin/master') -TimeoutSeconds $mergeTimeoutSeconds
-            if ($merge.ExitCode -ne 0) {
-                $mergeFailed = $true
-                Write-UpdateLog 'WARN' "git merge --ff-only failed: $(Get-FailureText $merge)"
-            } else {
-                $script:mergedCommitCount = $incomingCommitCount
-                Write-UpdateLog 'INFO' "Merged $incomingCommitCount new commit(s) from origin/master."
-            }
+        Set-StopMessage -Reason 'git-failed' -Text $gitFailedText
+        return
+    }
+
+    $behind = Invoke-Git @('rev-list', '--count', 'HEAD..origin/master')
+    if ($behind.TimedOut -or $behind.ExitCode -ne 0) {
+        Write-UpdateLog 'WARN' "git rev-list failed: $(Get-FailureText $behind)"
+        Set-StopMessage -Reason 'git-failed' -Text $gitFailedText
+        return
+    }
+    if ([int]$behind.Output.Trim() -gt 0) {
+        $incomingCommits = Invoke-Git @('log', '--oneline', 'HEAD..origin/master')
+        $headBeforeMergeResult = Invoke-Git @('rev-parse', 'HEAD')
+        if ($headBeforeMergeResult.ExitCode -eq 0) { $headBeforeMerge = $headBeforeMergeResult.Output.Trim() }
+        Write-UpdateLog 'INFO' "Incoming commits:`n$($incomingCommits.Output.Trim())"
+        $incomingCommitCount = [int]$behind.Output.Trim()
+        $merge = Invoke-Git @('merge', '--ff-only', 'origin/master') -TimeoutSeconds $mergeTimeoutSeconds
+        if ($merge.TimedOut) {
+            Write-UpdateLog 'WARN' "git merge --ff-only failed: $(Get-FailureText $merge)"
+            Set-StopMessage -Reason 'merge-failed' -Text $mergeFailedText
+            return
+        }
+        if ($merge.ExitCode -ne 0) {
+            $mergeFailed = $true
+            Write-UpdateLog 'WARN' "git merge --ff-only failed: $(Get-FailureText $merge)"
+        } else {
+            $script:mergedCommitCount = $incomingCommitCount
+            Write-UpdateLog 'INFO' "Merged $incomingCommitCount new commit(s) from origin/master."
         }
     }
 
     $head = Invoke-Git @('rev-parse', 'HEAD')
     if ($head.ExitCode -ne 0) {
         Write-UpdateLog 'WARN' "git rev-parse failed: $(Get-FailureText $head)"
+        Set-StopMessage -Reason 'git-failed' -Text $gitFailedText
         return
     }
     $headCommit = $head.Output.Trim()
@@ -289,14 +341,14 @@ function Update-TeamSetup {
     }
 
     if ($mergeFailed) {
-        Set-StopMessage -Reason 'merge-failed' -Text "Team Claude setup auto-update failed: git could not fast-forward the clone at $repoRoot. See $logPath."
+        Set-StopMessage -Reason 'merge-failed' -Text $mergeFailedText
         return
     }
     if ($installerFailed) {
         Set-StopMessage -Reason 'install-failed' -Text "Team Claude setup auto-update failed: install.ps1 reported an error. See $logPath."
         return
     }
-    if ($fetch.ExitCode -eq 0) { Remove-Item -LiteralPath $lastStopPath -Force -ErrorAction SilentlyContinue }
+    Remove-Item -LiteralPath $lastStopPath -Force -ErrorAction SilentlyContinue
     if (-not $installedNewCommit) { return }
 
     $message = "Team Claude setup updated to $($headCommit.Substring(0, 7))"

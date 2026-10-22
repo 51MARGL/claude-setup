@@ -34,7 +34,7 @@ directly below the heading.
 2. When the new entry is the third entry with the same root cause, stop and ask the user one
    question: `<root cause> is in MISTAKES.md 3 times. Make it a rule?`
 3. In the same message, give the rule text and the target file:
-   - A team rule goes into `claude-home/CLAUDE-TEAM.md` or into an agent file in the
+   - A team rule goes into `claude-home/CLAUDE-TEAM.md`, `claude-home/CLAUDE-MAIN.md`, or into an agent file in the
      `claude-setup` repository. It goes through a pull request, so the team reviews it.
      Each member gets it on the next update.
    - A rule for one repository goes into the `CLAUDE.md` of that repository, through its own

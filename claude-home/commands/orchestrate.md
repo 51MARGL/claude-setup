@@ -11,8 +11,8 @@ the code yourself. Each step is one agent invocation.
 ## Step 0 — pick the workflow, then show the chain
 
 1. Read the first word of `$ARGUMENTS`. If it names a workflow, use it. The rest is the task.
-2. **If the task is a reference instead of a description, resolve it first.** A reference is a
-   an Azure DevOps URL, a pull-request URL, or a bare work-item number such as `32617`. Run
+2. **If the task is a reference instead of a description, resolve it first.** A reference is an
+   Azure DevOps URL, a pull-request URL, or a bare work-item number such as `32617`. Run
    `devops` on it before anything else, and ask it for the title, the description, the
    acceptance criteria, the state, the linked work items, and the linked pull requests.
    - Give `devops` these values:
@@ -43,9 +43,14 @@ the code yourself. Each step is one agent invocation.
 3. Classify with the routing table below, using the resolved task text. A resolved work item is
    classified on what it asks for, not on the fact that it came from the work-item server — a defect report routes
    to `bugfix`, a schema change routes to `feature`.
-4. Print the chosen workflow, the reason in one clause, and the chain as a numbered list with the
-   model each step runs on.
-5. Start immediately. Do not ask for permission to begin, unless the workflow is `custom` and the
+4. Read `~/.claude/orchestrate/<workflow>.md` with the Read tool. Replace `~` with the
+   `%USERPROFILE%` path. The table in "Workflows" names the file. If the read fails, stop and say
+   so. Never print a chain from memory.
+5. Read `~/.claude/orchestrate/shared-steps.md` with the Read tool when the table in "Workflows"
+   says so. If the read fails, stop and say so.
+6. Print the chosen workflow and the reason in one clause. Then print the chain from the workflow
+   file as a numbered list, with the model of each step.
+7. Start immediately. Do not ask for permission to begin, unless the workflow is `custom` and the
    agent list is missing.
 
 ### Routing table
@@ -63,7 +68,7 @@ Match top to bottom. The first row that fits wins.
 | Moves, renames, extracts, or deduplicates code with no behaviour change | `refactor` |
 | Adds or changes behaviour, including a database schema, an entity, or a migration | `feature` |
 
-Some tasks get no chain. The list of these tasks is in `CLAUDE-TEAM.md`, section "Orchestrate
+Some tasks get no chain. The list of these tasks is in `CLAUDE-MAIN.md`, section "Orchestrate
 multi-step work yourself". A git operation goes to the `git` agent, because it knows the team rules
 for branch names, commit messages, and pull-request titles.
 
@@ -78,7 +83,7 @@ Pass `model` on every `Agent` call. Default to these, and say in one line when y
 |---|---|---|
 | `architect` | `opus` | Judgement. A wrong decision gives a wrong plan |
 | `planner` | `sonnet` when the task touches 1 project and fewer than 3 files, `opus` otherwise | A small task needs little judgement. Estimate the size from the task text and the `architect` report |
-| `pr-reviewer` (`review`, pull-request mode) | `opus` | It runs its own chain and merges the reviewer reports |
+| `pr-reviewer` (`review`, pull-request mode) | `sonnet` | The agent file holds the procedure. The reviewers that it starts do the judgement |
 | implementer agents, fix pass | `sonnet` | The plan already holds the decisions, so the step is execution, not judgement |
 | `tester` | `sonnet` | The test plan already names what to assert. Raise it to `opus` when its report says "Recommend `opus`", or when the tests must control concurrency or guard a published contract |
 | `code-reviewer`, `security-reviewer`, `migration-reviewer` | `sonnet` | The agent file holds the checks. Raise it to `opus` by the rules in "Reviewer model" |
@@ -111,183 +116,23 @@ Raise any other step to `opus` when one of these is true:
 
 ## Workflows
 
-### design
+Each workflow has its own file in `~/.claude/orchestrate/`. Step 0 reads the file of the chosen
+workflow. It reads `shared-steps.md` only when this table says so.
 
-1. `architect` — decide where the change belongs and what it breaks.
-2. Stop. Print the recommendation and the open questions, and wait for the user to choose. A
-   design decision is the user's, not yours.
+| Workflow | File | Read `shared-steps.md` |
+|---|---|---|
+| `design` | `design.md` | no |
+| `feature` | `feature.md` | yes |
+| `bugfix` | `bugfix.md` | yes |
+| `test` | `test.md` | yes |
+| `refactor` | `refactor.md` | yes |
+| `review` | `review.md` | only when the user asks for a fix pass in local mode |
+| `custom` | `custom.md` | only when the agent list names an implementer |
 
-### feature
+`shared-steps.md` holds the five shared steps, the browser check step, the fix pass, and the
+system-wide impact check.
 
-0. `architect` — run this only when the task touches a contract, a schema, a route, a package, or
-   more than 1 project. When you skip it, say in one line that the task touches none of these.
-1. `planner` — produce the phased implementation plan.
-2. `git` — the branch step. See [Shared steps](#shared-steps).
-3. Implementer — `dotnet-developer`, `frontend-developer`, `powershell-developer`, or
-   `container-developer`, chosen by the files the plan touches. If the plan touches both backend and frontend, run both implementers,
-   backend first. When the change adds or changes an entity or a schema, tell the implementer to
-   generate the migration through the repository's own workflow script.
-4. `tester` — the test step. Give it the test plan from step 1.
-5. `tester` — the browser check step. See [The browser check step](#the-browser-check-step--tester).
-6. The review step: `style-reviewer` and `code-reviewer`, plus each reviewer that a guard adds. See
-   [The guards](#the-guards). Run them in parallel, in one message.
-7. Fix pass — see [The fix pass](#the-fix-pass).
-8. `docs-updater` — the docs step.
-9. `tester` — the final suite run. See [The final suite run](#the-final-suite-run--tester).
-10. `git` — the commit step.
-
-### bugfix
-
-Use this workflow for a vulnerability or a leaked secret too. The security guard then adds
-`security-reviewer`.
-
-1. `Explore` — find where the defect lives. Give it the symptom, not a guess at the cause. Set the breadth to `medium`.
-2. `git` — the branch step.
-3. `tester` — the reproduce scope. Write a test that reproduces the bug. Run only that test, and
-   show that it fails for the reason in the bug report.
-4. Implementer — fix the bug. Give it the failing test as the definition of done.
-5. `tester` — the test step. Run the test from step 3 and the tests that cover the change.
-6. `tester` — the browser check step. See [browser check](#the-browser-check-step--tester).
-7. The review step: `code-reviewer`, plus each reviewer that a guard adds. Tell `code-reviewer` to
-   confirm the fix and to look for the same defect elsewhere.
-8. Fix pass — see [The fix pass](#the-fix-pass).
-9. `docs-updater` — the docs step.
-10. `tester` — the final suite run. See [The final suite run](#the-final-suite-run--tester).
-11. `git` — the commit step.
-
-If the repository has no tests, `tester` reports that at step 3. Then give the implementer the
-reproduction steps from the bug report instead.
-
-### test
-
-Use this workflow for test work with no change to production code: new tests for code that
-already exists, a wrong test, or a flaky test.
-
-1. `git` — the branch step.
-2. `tester` — write or fix the tests, or find the cause of the flaky test. Tell it to edit test
-   files only.
-3. The review step: `code-reviewer` and `style-reviewer`, in parallel, in one message. Tell
-   `code-reviewer` to check that each new test fails when the behaviour that it guards is reverted.
-4. Fix pass — `tester` only.
-5. `docs-updater` — the docs step.
-6. `tester` — the final suite run. See [The final suite run](#the-final-suite-run--tester).
-7. `git` — the commit step.
-
-If `tester` finds that production code is wrong, stop the chain. Print the failure, and offer the
-`bugfix` workflow.
-
-### refactor
-
-0. `architect` — **run this by default.** Skip it only for a rename or an extraction that stays
-   inside one project and changes no public surface. When you skip it, say why in one line.
-1. `Explore` — map every caller and every dependency of the code to be changed. Set the breadth to `very thorough`.
-2. `git` — the branch step.
-3. `tester` — the baseline scope. Add no test. Record two sets of counts:
-   - the counts of the tests that cover the code from step 1
-   - the counts of the full suite of each test project from the scope in [The final suite
-     run](#the-final-suite-run--tester). Record them only when [The system-wide impact
-     check](#the-system-wide-impact-check) fires on the planned change. No diff exists yet, so decide
-     from the `architect` and `Explore` output.
-4. Implementer — make the change with no behaviour change.
-5. `tester` — the test step. Run the covering tests from step 3. The counts must match the
-   covering-test baseline.
-6. The review step: `style-reviewer` and `code-reviewer`, plus each reviewer that a guard adds. Run
-   them in parallel, in one message.
-7. Fix pass — see [The fix pass](#the-fix-pass).
-8. `docs-updater` — the docs step.
-9. `tester` — the final suite run. See [The final suite run](#the-final-suite-run--tester). Its
-   counts must match the full-suite baseline from step 3. When step 3 recorded a full-suite
-   baseline, run the full suite, also when the check does not fire on the diff. Otherwise compare
-   the counts with the covering-test baseline. When the diff fires the impact check but step 3
-   recorded no full-suite counts, run the full suite. Write "no baseline" in the final report.
-10. `git` — the commit step.
-
-### review
-
-One workflow, two modes. The input selects the mode.
-
-#### Pick the mode
-
-Match top to bottom. The first row that fits wins.
-
-| The input | Mode |
-|---|---|
-| A pull-request URL | pull-request mode |
-| A bare number, and the user says "PR" or "pull request" | pull-request mode |
-| A bare number with no other signal | ask one question: pull request or work item? |
-| No reference, or the user says "local", "my changes", "my branch", "the diff", or names a path | local mode |
-
-Print the mode and the reason in one line before the first step.
-
-#### Pull-request mode
-
-Review an Azure DevOps pull request. The `pr-reviewer` agent holds the full procedure. Do not
-run the steps of that procedure yourself.
-
-1. `pr-reviewer` (`opus`) — give it the pull-request URL or number, and tell it that a bare number
-   is a pull-request id. Also give it `BaseUrl`, `Project`, and `Auth`, found by the rules in step 0,
-   and `<scratchpad>/pr-<id>` as the worktree folder.
-   Why an agent: the chain reads many files, and the agent keeps them out of this session.
-2. If the report starts with `STOPPED`, print the reason and the question in it, and stop. When the
-   user answers, start `pr-reviewer` again with the answer in the prompt.
-3. Print the agent's report as the final report of this workflow. Do not use the normal final
-   report. Keep every finding, path, and line number from it.
-
-Never post a comment, never vote, and never change the pull request on the server. The vote is
-the user's to cast.
-
-#### Local mode
-
-Review the work in the local repository.
-
-1. Find the diff. Use the first rule that fits:
-   - The user named a path, a branch, or a commit range: review that.
-   - Otherwise: the uncommitted changes plus the commits on the current branch that are not on
-     the default branch. Get the default branch from
-     `git symbolic-ref --short refs/remotes/origin/HEAD`. Use `git merge-base HEAD <default>` as the
-     base.
-   - If the diff is empty, stop and say so. Do not review the whole repository.
-2. Print the base, the number of changed files, and the number of changed lines in one line.
-3. Run in parallel, in one message:
-   - `code-reviewer` — defects.
-   - `style-reviewer` — repository conventions.
-   - each reviewer that a guard adds. See [The guards](#the-guards).
-   - `docs-updater` — report only. Tell it to list the documents that the diff made wrong, and
-     to edit no file.
-
-   When the user named a path and asked whether the code is safe, there is no diff. Review the
-   files at that path instead. The security guard fires on the request itself.
-4. Merge the reports into the normal final report. Remove duplicate findings, and keep the most
-   severe rating of each one.
-
-Local mode reports only. It runs no fix pass unless the user asks for one.
-
-### custom
-
-The task begins with a comma-separated agent list, then the description. Run them in that order.
-
-```
-/orchestrate custom "Explore,dotnet-developer,code-reviewer" fix the retry loop in the client
-```
-
-When the list names an implementer, add the five shared steps that the list does not name:
-
-- the branch step, before the first implementer
-- the test step, after the last implementer
-- the docs step, the final suite run, and the commit step, after the last agent in the list, in
-  that order
-
-Mark each added step as `(added)` in the printed chain. The user can remove it before step 1 starts.
-
-## Shared steps
-
-Five shared steps: the branch step, the test step, the docs step, the final suite run, and the
-commit step. The workflows `feature`, `bugfix`, `refactor`, and `test` run them, except that `test`
-has no separate test step, because its `tester` step writes and runs the tests. The fix pass runs
-only when the review step returns a blocking finding. Never skip a shared step in these four
-workflows to save time.
-
-### The guards
+## The guards
 
 A guard adds a reviewer to the review step. Decide each guard from the diff after the test step,
 not from the plan. Why: the plan can miss a SQL file or a configuration change that the implementer
@@ -303,212 +148,6 @@ added.
 
 Print each guard that fired, and the reason in one clause, in the step line of the review step.
 `pr-reviewer` holds the same two conditions. Keep the two texts identical when you change one.
-
-### The system-wide impact check
-
-The main session decides this check from the diff, like the guards. Run `git diff --name-only`. Read
-the hunks that you need. Decide before the final suite run.
-
-Before a diff exists, as in `refactor` step 3, the main session decides from the planned change. It
-uses the `architect` and `Explore` output.
-
-The check fires when the diff changes one of these:
-
-- (a) a project that 2 or more other projects reference
-- (b) a build or package file:
-  - `Directory.Build.props`
-  - `Directory.Packages.props`
-  - `global.json`
-  - a solution file
-  - the dependencies in `package.json`
-  - a lock file
-- (c) startup, DI registration, or middleware that all endpoints use, such as:
-  - `Program.cs`
-  - `Startup.cs`
-  - the DI extension methods
-- (d) one of these:
-  - a message contract
-  - a public API contract
-  - a database schema
-- (e) shared test code
-
-Print `full suite: <criterion>` or `relevant tests: no criterion fired` in the step line of the final
-suite run.
-
-This section is the only copy of the criteria. `tester.md` and `README.md` point here.
-
-Why: the full suite costs the most tokens, and only a shared change can break a test that no earlier
-step ran.
-
-### The test step — `tester`
-
-Run it after an implementer, before the review step that follows.
-
-1. Give it the files changed, the behaviours that the implementer report lists, and the test plan
-   from `planner` when one exists.
-2. Tell it to edit test files only.
-3. Tell it to run the new tests and the tests that cover the change. It never runs the full suite.
-   Tell it to use a test filter and minimal output. See `tester`, "Keep test output small".
-4. Put its counts (passed, failed, skipped) in the step line.
-5. If a test fails because of production code, send the failure to the implementer, then run the
-   test step again. See [The fix pass](#the-fix-pass) for the count.
-
-If `planner` or `tester` reported that the repository has no tests, skip each later test step and
-the final suite run. Say so in one line, and name the build as the only check in the final report.
-
-Why: the implementers do not write or run tests. Without this step, nothing in the chain runs
-them.
-
-### The browser check step — `tester`
-
-Run it after the test step, before the review step. It runs only in `feature` and `bugfix`.
-
-It runs only when all three conditions are true:
-
-- The diff after the test step touches a file of one of these types, outside the test folders:
-  - `.tsx`
-  - `.jsx`
-  - `.css`
-  - `.scss`
-  - `.sass`
-  - `.less`
-  - `.html`
-- The repository runs as a standalone app: its `package.json` has a `dev` or `start` script.
-- The acceptance criteria name something visible on the page. In `bugfix`, the reproduction steps
-  name something visible on the page.
-
-Decide from the diff, not from the plan.
-
-1. Give `tester` these three inputs:
-   - the acceptance criteria. In `bugfix`, give the reproduction steps from the bug report as the
-     criteria.
-   - the scratchpad path for screenshots
-   - the dev-server script of the repository
-2. Tell it to edit no file.
-3. Put the result of each acceptance criterion in the step line.
-4. If a check fails because of production code, send the failure to the implementer. Then run the
-   test step again. Then run the browser check step again. See [The fix pass](#the-fix-pass) for
-   the count.
-5. If `tester` reports `SKIPPED: login needed`, offer the user a check in their own browser with
-   Claude in Chrome.
-
-When a condition is false, skip the step. Say so in the step line.
-
-Why: a unit test cannot show that a page renders and that the console has no error.
-
-### The fix pass
-
-A finding is **blocking** when it is one of these:
-
-- a wrong result, a crash, data loss, or a broken contract
-- a security finding rated Critical or High
-- a break of a rule that the repository `CLAUDE.md` marks as required
-
-Fix every blocking finding before the commit. Every other finding is non-blocking. Mark each finding `blocking` or `non-blocking`.
-
-One fix pass is one fix-and-re-run of one stage. Count each stage on its own: the test step, the
-browser check step, the review step, and the final suite run. A stage that needs a second fix pass
-is not converging, so stop the chain.
-
-A review step can return two kinds of findings. Route each finding to its owner:
-
-- a defect in production code: the implementer that owns the stack
-- a missing test, or a defect in a test: `tester`
-
-Run the implementer first when both have findings. After the implementer changed code, run the test
-step again, with only the relevant tests: the failed tests, the new tests, and the tests that cover
-the fixed code. Tell `tester` to use a test filter and minimal output. See `tester`, "Keep test output
-small". Never run the full suite in a fix pass. Also run the browser check step again when
-that step ran before.
-
-When `security-reviewer` or `migration-reviewer` returned a blocking finding, run that reviewer
-again after the fix pass. Tell it to confirm that each blocking finding is closed, and that the fix
-opened nothing new.
-
-Skip the fix pass when the review step returned no blocking finding. Say so in the step line. Put
-each non-blocking finding in the "Non-blocking findings" section of the final report.
-
-### The final suite run — `tester`
-
-Run it at most once, at the end of the chain. Run it after the review step, the fix pass, and the docs
-step, and before the commit step. It runs also when no fix pass ran.
-
-1. Decide by [The system-wide impact check](#the-system-wide-impact-check). Use the first case that
-   fits:
-   - In `refactor`, step 3 recorded a full-suite baseline: tell `tester` to run the full suite. Name the full-suite baseline from step 3 as the reason.
-   - The check fired: tell `tester` to run the full suite of each test project that the diff
-     touches. Also tell it to run the full suite of each test project that tests a project that the
-     diff touches.
-   - Code changed after the last test step: tell `tester` to run the relevant tests again. Give it
-     the union of the scopes of the earlier test steps.
-   - Otherwise: skip the run. Print one line that gives the reason.
-
-   In the `test` workflow, the `tester` step 2 and the fix pass count as test steps, and a test file
-   counts as code.
-2. Tell it to edit no file.
-3. Put its counts (passed, failed, skipped) in the step line.
-4. If the suite fails because of production code, do these steps in order:
-   - Send the failure to the implementer.
-   - Run the test step on the failed tests.
-   - Run one `code-reviewer` pass on the new diff only.
-   - Run the final suite run again.
-
-   See [The fix pass](#the-fix-pass) for the count.
-5. In the `test` workflow, a failure caused by production code stops the chain. Print the failure,
-   and offer the `bugfix` workflow.
-
-If `planner` or `tester` reported that the repository has no tests, skip this step.
-
-Why: the test step and the fix pass run only the relevant tests. The full suite finds a break in a
-test that no earlier step ran, and only a system-wide change can cause that break. Other changes need
-at most one more run of the relevant tests.
-
-### The branch step — `git`
-
-Run it before the first implementer.
-
-1. Run `git branch --show-current` yourself. Compare it with the default branch from
-   `git symbolic-ref --short refs/remotes/origin/HEAD`.
-2. If the current branch is a work branch, skip the agent. Print the branch name in the step line.
-3. If the current branch is the default branch, send `git`. Tell it to create a work branch and
-   switch to it.
-   - Give it the work-item number and title when step 0 resolved one.
-   - Tell it to keep the uncommitted changes. It must not stash, reset, or discard them.
-
-Why: a commit on the default branch cannot go into a pull request without extra history changes.
-
-### The docs step — `docs-updater`
-
-Run it after the last review step and its fix pass, before the commit step.
-
-1. Give it the task, the files changed, and the diff base.
-2. Tell it to edit documentation files only.
-3. Add each file it changed to the "Files changed" list of the final report.
-
-Run it always. It returns "no document is stale" when the diff makes no document wrong.
-
-Why: you cannot tell from the handoffs alone which README, `CLAUDE.md`, or API description names
-the changed code. The agent searches for them.
-
-### The commit step — `git`
-
-Run it last, and only when the chain ends with no blocking finding open.
-
-1. Send `git` with the files changed, the work-item number and title, and the task.
-2. Tell it to write the commit message and the pull-request title by its own rules.
-3. Tell it what to do with them:
-   - The user asked for a commit in the task, or during the chain: stage the changed files by
-     name, and commit. Quote the user's own words in the prompt, as `User request: "<words>"`.
-     Without the quote, `git` commits nothing.
-   - The user did not ask: commit nothing. Return the message and the title only.
-4. Put the branch, the commit message, the pull-request title, and the commit hash or "not
-   committed" in the final report.
-
-Never tell it to push, amend, or force-push unless the user asked for that exact operation. If a
-commit hook fails, stop the chain and report the hook output. Never skip the hook.
-
-Why: the user decides when work goes into the history. The agent still writes the message, so
-the names follow the team rules.
 
 ## The handoff
 
@@ -571,7 +210,7 @@ Why: the toast hook `notify.ps1` matches this line and shows no "Claude: done" t
 `/compact` clears the spent context and keeps a summary. Only the user can run it. You never run
 it, and no agent can run it for the user.
 
-This section is the only full copy of the compact rules. `CLAUDE-TEAM.md` and the
+This section is the only full copy of the compact rules. `CLAUDE-MAIN.md` and the
 `strategic-compact` skill point here.
 
 Check for a compact gate after each step, before you start the next step.
@@ -624,11 +263,22 @@ Run: /compact Keep: <the facts the next step needs, one line>
 Then say "continue". I resume at step <n> of <total>.
 ```
 
-The `Keep:` line is the focus text for `/compact`. Put the plan decisions, the file paths, the
-acceptance criteria, and the open findings in it. Leave out the search results and the file
-contents.
+The `Keep:` line is the focus text for `/compact`. Put the workflow name, whether the
+workflow uses `shared-steps.md`, the plan decisions, the file paths, the acceptance criteria, and
+the open findings in it. Leave out the search results and the file contents.
 
-When the user says "continue", restate the step line first, then run the step.
+When the user says "continue" after gate A or gate B, read these files again with the Read tool.
+Replace `~` with the `%USERPROFILE%` path.
+
+1. `~/.claude/commands/orchestrate.md`, this file.
+2. `~/.claude/orchestrate/<workflow>.md`, the file of the current workflow.
+3. `~/.claude/orchestrate/shared-steps.md`, when the table in "Workflows" says so.
+
+If a read fails, stop. Say so. Then restate the step line. Run the step. Why: a compact turns the
+earlier reads into a summary, and a step must not run from memory.
+
+After gate C, skip the re-read. The next task starts at Step 0, which reads the files of its own
+workflow.
 
 ## Stop rules
 
@@ -636,14 +286,14 @@ Stop the chain and report, when:
 
 - An implementer reports the task is blocked.
 - A build or a test fails and the implementer could not fix it.
-- A stage needs a second fix pass. See [The fix pass](#the-fix-pass). A reviewer that returns a
+- A stage needs a second fix pass. See "The fix pass" in `shared-steps.md`. A reviewer that returns a
   blocking finding after the first fix pass means the chain is not converging.
 - `tester` cannot reproduce the bug in the `bugfix` workflow. Do not fix a bug that no test or
   reproduction shows.
 - The test counts after a refactor do not match the baseline, and the fix pass already ran once.
   This applies to the covering-test counts of the test step. It applies to the full-suite counts of
-  the final suite run only when step 3 recorded a full-suite baseline. Each set has its own baseline
-  from step 3.
+  the final suite run only when the baseline step of `refactor` recorded a full-suite baseline.
+  Each set has its own baseline from the baseline step of `refactor`.
 - The browser check fails again after one fix pass.
 - The user interrupts.
 - `architect` returned two viable options with a real trade-off. The choice is the user's. Print
@@ -698,7 +348,7 @@ After the report, check gate C. End with one next action the user can do in unde
   at the same time. Never run `tester` and an implementer at the same time.
 - In `feature`, `bugfix`, `test`, and `refactor`, never skip one of these steps to save time:
   - the review step
-  - the test step (not in `test`, see [Shared steps](#shared-steps))
+  - the test step (not in `test`, see "Shared steps" in `shared-steps.md`)
   - the docs step
   - the final suite run
   - the commit step

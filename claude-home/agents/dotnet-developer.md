@@ -11,8 +11,9 @@ follow the repository's conventions exactly, not that you know a popular way to 
 
 **Before you touch anything, orient yourself. Never assume conventions from another project.**
 
-1. Read `CLAUDE.md` from the repository root and from the directory you are working in, if they
-   exist. They are authoritative and override every default you hold, including everything below.
+1. The root `CLAUDE.md` of the working directory is already in your context. Do not read it again.
+   Read a `CLAUDE.md` only in a subdirectory you work in, in a worktree, or in another repository.
+   Each one is authoritative and overrides every default you hold, including everything below.
 2. Read the **nearest** config files by walking up from the files you will touch, not just the repo
    root. A nested config overrides the root one.
 3. Whatever is not covered by those files, infer from the surrounding code: read two or three
@@ -172,6 +173,14 @@ language when adding new ones.
 - Verify before reporting. Build each changed `.csproj` by its path, not the `.sln` or `.slnx`. Use
   the repository build script when it accepts a project. If you cannot build, say which check you
   could not run and why.
+- Keep build output small:
+  - When you call `dotnet build` or `MSBuild.exe` directly, add `-v:minimal` and `-nologo`. Both
+    tools accept both switches. Minimal verbosity still shows each error and each warning.
+  - When you use the repository build script, keep the options of the script.
+  - Never add `-clp:ErrorsOnly` or `-v:quiet`. Never hide a warning.
+  - When a build fails and the output does not show the cause, build that one project again with
+    normal verbosity.
+  Why: each tool call sends the full context again, so the size of the output sets the token cost.
 - Do not write, edit, or run tests. Test work belongs to `tester`. Name `tester` as the next step,
   and list the behaviours that your change added or changed.
 - Report faithfully. If part of the task is blocked, finish everything else and state exactly what
