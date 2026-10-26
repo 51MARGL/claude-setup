@@ -26,6 +26,20 @@ $findPathFlagNames = @('-path', '-ipath', '-wholename', '-iwholename')
 $findRegexFlagNames = @('-regex', '-iregex')
 $findRegexCodePattern = '(?i)\\\.(cs|tsx?|jsx?)\b'
 $exemptAgentTypes = @('git', 'devops', 'pr-reviewer', 'claude-code-guide', 'statusline-setup')
+$statementPrefixWords = @('{', '(', '!', 'if', 'while', 'until', 'do', 'then', 'else', 'elif', 'time', '%', '?', 'foreach', 'foreach-object', 'where-object')
+$groupOpeningWords = @('!', '{', 'if', 'while', 'until', 'do', 'then', 'else', 'elif', 'time', 'foreach')
+$directoryChangeCommandNames = @('cd', 'chdir', 'set-location', 'sl', 'pushd')
+$blockOpenerNames = @('foreach-object', 'foreach', '%')
+$powerShellValueFlagPattern = '(?i)^-(ea|erroraction|wa|warningaction|ia|informationaction|ev|errorvariable|ov|outvariable|pv|pipelinevariable|ob|outbuffer|attributes|encoding|de(p(t(h)?)?)?)$'
+$uncPathPattern = '^(\\\\|//)'
+$xargsValueFlagNames = @('--max-args', '--max-procs', '--delimiter', '--replace', '--max-lines', '--arg-file', '--eof')
+$xargsCaseSensitiveValueFlagNames = @('-I', '-n', '-P', '-d', '-L', '-s', '-E', '-a')
+$gitListFilesValueFlagNames = @('-x', '-X', '--exclude', '--exclude-from', '--exclude-per-directory', '--with-tree', '--format', '--abbrev')
+$powerShellPathFlagPattern = '(?i)^-(pa(t(h)?)?|l(i(t(e(r(a(l(p(a(t(h)?)?)?)?)?)?)?)?)?)?)$'
+$redirectionPattern = '^\d*>|^<'
+$maxNamePatternParts = 32
+$maxSearchPaths = 20
+$indexedRootCache = @{}
 
 function Write-GuardLog {
     param([string]$Level, [string]$Text)
@@ -51,6 +65,8 @@ function ConvertTo-CommandSegments {
     $hasWord = $false
     $openQuote = [char]0
     $afterPipe = $false
+    $groupDepth = 0
+    $wordBraceDepth = 0
 
     for ($index = 0; $index -lt $CommandText.Length; $index++) {
         $character = $CommandText[$index]
@@ -63,13 +79,38 @@ function ConvertTo-CommandSegments {
             $hasWord = $true
             continue
         }
-        $isSeparator = $character -in ';', '|', '&', "`n", "`r"
+        if ($character -eq '\' -and $index + 1 -lt $CommandText.Length -and $CommandText[$index + 1] -in '(', ')') {
+            [void]$word.Append($character).Append($CommandText[$index + 1])
+            $hasWord = $true
+            $index++
+            continue
+        }
+        $nextCharacter = if ($index + 1 -lt $CommandText.Length) { $CommandText[$index + 1] } else { [char]0 }
+        $isGroupBoundary = $false
+        if ($character -eq '(') {
+            $lastWord = if ($words.Count -gt 0) { $words[$words.Count - 1] } else { $null }
+            $followsExpansionSigil = $word.Length -gt 0 -and $word[$word.Length - 1] -in '$', '@'
+            $startsStatement = -not $hasWord -and ($null -eq $lastWord -or $lastWord.EndsWith('=') -or $lastWord -in $groupOpeningWords)
+            $isGroupBoundary = $followsExpansionSigil -or $startsStatement
+            if ($isGroupBoundary) { $groupDepth++ }
+        } elseif ($character -eq ')' -and $groupDepth -gt 0) {
+            $isGroupBoundary = $true
+            $groupDepth--
+        } elseif ($character -eq '{') {
+            $isGroupBoundary = -not $hasWord -and ($nextCharacter -eq [char]0 -or [char]::IsWhiteSpace($nextCharacter))
+            if (-not $isGroupBoundary) { $wordBraceDepth++ }
+        } elseif ($character -eq '}') {
+            $isGroupBoundary = -not $hasWord -and $wordBraceDepth -eq 0
+            if ($wordBraceDepth -gt 0) { $wordBraceDepth-- }
+        }
+        $isSeparator = $isGroupBoundary -or $character -in ';', '|', '&', "`n", "`r"
         if ([char]::IsWhiteSpace($character) -or $isSeparator) {
             if ($hasWord) {
                 $words.Add($word.ToString())
                 [void]$word.Clear()
                 $hasWord = $false
             }
+            $wordBraceDepth = 0
         }
         if ($isSeparator) {
             if ($words.Count -gt 0) {
@@ -99,47 +140,126 @@ function Get-CommandName {
     return ($Word -replace '^.*[\\/]', '' -replace '(?i)\.exe$', '').ToLowerInvariant()
 }
 
+function Get-CommandWords {
+    param([string[]]$Words)
+
+    $startIndex = 0
+    while ($startIndex -lt $Words.Count - 1) {
+        $firstWord = $Words[$startIndex]
+        if ($firstWord -match '^\w+=' -or $firstWord -in $statementPrefixWords) {
+            $startIndex++
+        } elseif ($firstWord -match '^\$\w+$' -and $Words[$startIndex + 1] -match '^[-+*/%]?=$') {
+            $startIndex = [Math]::Min($startIndex + 2, $Words.Count - 1)
+        } elseif ($firstWord -match '^\$\w+[-+*/%]?=(.+)$') {
+            $assignedValue = $Matches[1]
+            if ($startIndex + 1 -lt $Words.Count) { return @($assignedValue) + @($Words[($startIndex + 1)..($Words.Count - 1)]) }
+            return @($assignedValue)
+        } else {
+            break
+        }
+    }
+    return @($Words[$startIndex..($Words.Count - 1)])
+}
+
+function Get-XargsCommandName {
+    param([string[]]$Words)
+
+    for ($wordIndex = 1; $wordIndex -lt $Words.Count; $wordIndex++) {
+        $word = $Words[$wordIndex]
+        if ($word -cin $xargsCaseSensitiveValueFlagNames -or $word.ToLowerInvariant() -in $xargsValueFlagNames) {
+            $wordIndex++
+        } elseif (-not $word.StartsWith('-')) {
+            return Get-CommandName $word
+        }
+    }
+    return ''
+}
+
+function Get-BlockListingWords {
+    param([object[]]$Segments, [int]$SegmentIndex)
+
+    if ($SegmentIndex -lt 2 -or -not $Segments[$SegmentIndex - 1].AfterPipe) { return @() }
+    $openerWords = @(Get-CommandWords -Words $Segments[$SegmentIndex - 1].Words)
+    if ($openerWords.Count -ne 1 -or $openerWords[0] -notin $blockOpenerNames) { return @() }
+    $listingWords = @(Get-CommandWords -Words $Segments[$SegmentIndex - 2].Words)
+    if ((Get-CommandName $listingWords[0]) -in $directoryListingCommandNames) { return $listingWords }
+    return @()
+}
+
 function Get-SearchSegmentWords {
-    param([object[]]$Segments)
+    param([object[]]$Segments, [string[]]$SegmentDirectories)
 
     for ($segmentIndex = 0; $segmentIndex -lt $Segments.Count; $segmentIndex++) {
-        $words = @($Segments[$segmentIndex].Words)
-        $firstWordIndex = 0
-        while ($firstWordIndex -lt $words.Count - 1 -and $words[$firstWordIndex] -match '^\w+=') { $firstWordIndex++ }
-        $commandName = Get-CommandName $words[$firstWordIndex]
-        $nextWord = if ($firstWordIndex + 1 -lt $words.Count) { Get-CommandName $words[$firstWordIndex + 1] } else { '' }
+        $words = @(Get-CommandWords -Words $Segments[$segmentIndex].Words)
+        $commandName = Get-CommandName $words[0]
+        $nextWord = if ($words.Count -gt 1) { Get-CommandName $words[1] } else { '' }
 
+        $isXargsSearch = $commandName -eq 'xargs' -and (Get-XargsCommandName -Words $words) -in 'grep', 'rg'
+        if ($isXargsSearch) { return [pscustomobject]@{ Words = $words; PathWords = $words; Directory = $SegmentDirectories[$segmentIndex] } }
         if ($Segments[$segmentIndex].AfterPipe) {
-            $isXargsSearch = $commandName -eq 'xargs' -and $nextWord -in 'grep', 'rg'
-            $isListingSearch = $commandName -in 'select-string', 'sls' -and $segmentIndex -gt 0 -and
-                (Get-CommandName @($Segments[$segmentIndex - 1].Words)[0]) -in $directoryListingCommandNames
-            if ($isListingSearch) { return @($Segments[$segmentIndex - 1].Words) + $words }
-            if ($isXargsSearch) { return $words }
+            $listingWords = if ($segmentIndex -gt 0) { @(Get-CommandWords -Words $Segments[$segmentIndex - 1].Words) } else { @() }
+            $isListingSearch = $commandName -in 'select-string', 'sls' -and $listingWords.Count -gt 0 -and
+                (Get-CommandName $listingWords[0]) -in $directoryListingCommandNames
+            if ($isListingSearch) {
+                return [pscustomobject]@{ Words = $listingWords + $words; PathWords = $listingWords; Directory = $SegmentDirectories[$segmentIndex - 1] }
+            }
             continue
         }
         $isGitGrep = $commandName -eq 'git' -and (
             $nextWord -eq 'grep' -or
-            ($nextWord -eq '-c' -and $firstWordIndex + 3 -lt $words.Count -and (Get-CommandName $words[$firstWordIndex + 3]) -eq 'grep'))
+            ($nextWord -eq '-c' -and 3 -lt $words.Count -and (Get-CommandName $words[3]) -eq 'grep'))
         $isSedSearch = $commandName -eq 'sed' -and $null -ne (Get-SedAddressPattern -Words $words)
-        if ($commandName -in $searchCommandNames -or $isGitGrep -or $isSedSearch) { return $words }
+        if ($commandName -in $searchCommandNames -or $isGitGrep -or $isSedSearch) {
+            $blockListingWords = @(Get-BlockListingWords -Segments $Segments -SegmentIndex $segmentIndex)
+            if ($blockListingWords.Count -gt 0) {
+                return [pscustomobject]@{ Words = $blockListingWords + $words; PathWords = $blockListingWords; Directory = $SegmentDirectories[$segmentIndex - 2] }
+            }
+            return [pscustomobject]@{ Words = $words; PathWords = $words; Directory = $SegmentDirectories[$segmentIndex] }
+        }
     }
     return $null
 }
 
 function Get-FileNameSearch {
-    param([object[]]$Segments, [string]$ToolName)
+    param([object[]]$Segments, [string]$ToolName, [string[]]$SegmentDirectories)
 
-    foreach ($segment in $Segments) {
+    for ($segmentIndex = 0; $segmentIndex -lt $Segments.Count; $segmentIndex++) {
+        $segment = $Segments[$segmentIndex]
         if ($segment.AfterPipe) { continue }
-        $words = @($segment.Words)
+        $words = @(Get-CommandWords -Words $segment.Words)
         $firstWordIndex = 0
-        while ($firstWordIndex -lt $words.Count - 1 -and $words[$firstWordIndex] -match '^\w+=') { $firstWordIndex++ }
-        $commandName = Get-CommandName $words[$firstWordIndex]
+        $commandName = Get-CommandName $words[0]
         $namePatterns = [System.Collections.Generic.List[string]]::new()
+        $pathOperands = [System.Collections.Generic.List[string]]::new()
+        $directory = $SegmentDirectories[$segmentIndex]
+        $isCodeRegexSearch = $false
 
-        if ($commandName -eq 'find') {
+        if ($commandName -eq 'git') {
+            $wordIndex = 1
+            while ($wordIndex -lt $words.Count -and ($words[$wordIndex] -ceq '-C' -or $words[$wordIndex] -ceq '-c' -or $words[$wordIndex].StartsWith('--'))) {
+                if ($words[$wordIndex] -ceq '-C' -and $wordIndex + 1 -lt $words.Count) { $pathOperands.Add($words[$wordIndex + 1]) }
+                $wordIndex += if ($words[$wordIndex].StartsWith('--')) { 1 } else { 2 }
+            }
+            if ($wordIndex -ge $words.Count -or $words[$wordIndex] -cne 'ls-files') { continue }
+            $afterDoubleDash = $false
+            for ($wordIndex++; $wordIndex -lt $words.Count; $wordIndex++) {
+                $word = $words[$wordIndex]
+                if ($afterDoubleDash -or -not $word.StartsWith('-')) {
+                    if (-not $word.StartsWith(':') -and ($word -replace '^.*[\\/]', '') -match '[*?.]') { $namePatterns.Add($word) }
+                } elseif ($word -eq '--') {
+                    $afterDoubleDash = $true
+                } elseif ($word -cin $gitListFilesValueFlagNames) {
+                    $wordIndex++
+                }
+            }
+        } elseif ($commandName -eq 'find') {
             $isDirectorySearch = $false
-            $isCodeRegexSearch = $false
+            $operandIndex = 1
+            while ($operandIndex -lt $words.Count -and $words[$operandIndex] -cmatch '^-(H|L|P|O\d?)$') { $operandIndex++ }
+            while ($operandIndex -lt $words.Count -and $words[$operandIndex] -notmatch '^(-|!|\(|\\\()') {
+                $pathOperands.Add($words[$operandIndex])
+                $operandIndex++
+            }
             for ($wordIndex = $firstWordIndex + 1; $wordIndex -lt $words.Count; $wordIndex++) {
                 $hasNextWord = $wordIndex + 1 -lt $words.Count
                 $flagName = $words[$wordIndex].ToLowerInvariant()
@@ -156,7 +276,6 @@ function Get-FileNameSearch {
                 }
             }
             if ($isDirectorySearch) { continue }
-            if ($isCodeRegexSearch) { return $commandName }
         } elseif ($commandName -in $directoryListingCommandNames) {
             $isDirectorySearch = $false
             $isRecursive = $false
@@ -165,7 +284,10 @@ function Get-FileNameSearch {
                 if ($word -match '(?i)^-(filt(e(r)?)?|inc(l(u(d(e)?)?)?)?)$') {
                     if ($wordIndex + 1 -lt $words.Count) { $namePatterns.Add($words[$wordIndex + 1]) }
                     $wordIndex++
-                } elseif ($word -match '(?i)^-ex(c(l(u(d(e)?)?)?)?)?$') {
+                } elseif ($word -match '(?i)^-ex(c(l(u(d(e)?)?)?)?)?$' -or $word -match $powerShellValueFlagPattern) {
+                    $wordIndex++
+                } elseif ($ToolName -eq 'PowerShell' -and $word -match $powerShellPathFlagPattern) {
+                    if ($wordIndex + 1 -lt $words.Count) { $pathOperands.AddRange([string[]]($words[$wordIndex + 1] -split ',')) }
                     $wordIndex++
                 } elseif ($word -match '(?i)^-(ad|dir(e(c(t(o(r(y)?)?)?)?)?)?)$') {
                     $isDirectorySearch = $true
@@ -173,8 +295,9 @@ function Get-FileNameSearch {
                     $isRecursive = $true
                 } elseif ($ToolName -ne 'PowerShell' -and $word -cmatch '^-[A-Za-z]*R') {
                     $isRecursive = $true
-                } elseif (-not $word.StartsWith('-') -and $word -match '[*?]') {
-                    $namePatterns.Add($word)
+                } elseif (-not $word.StartsWith('-')) {
+                    $pathOperands.Add($word)
+                    if ($word -match '[*?]') { $namePatterns.Add($word) }
                     if ($word.Contains('**')) { $isRecursive = $true }
                 }
             }
@@ -183,11 +306,20 @@ function Get-FileNameSearch {
             continue
         }
 
+        $searchPaths = @(Resolve-OperandPaths -Operands $pathOperands.ToArray() -Directory $directory)
+        if ($isCodeRegexSearch) { return [pscustomobject]@{ CommandName = $commandName; SearchPaths = $searchPaths } }
         foreach ($namePattern in $namePatterns) {
-            if (Test-NamePatternIsCodeSearch -NamePattern $namePattern) { return $commandName }
+            if (Test-NamePatternIsCodeSearch -NamePattern $namePattern) { return [pscustomobject]@{ CommandName = $commandName; SearchPaths = $searchPaths } }
         }
     }
     return $null
+}
+
+function Add-FilterValue {
+    param($FilterValues, [string]$Value)
+
+    $includedParts = @($Value -split '\s+' | Where-Object { $_ -and -not $_.StartsWith('!') })
+    if ($includedParts.Count -gt 0) { $FilterValues.Add($includedParts -join ' ') }
 }
 
 function Get-ShellFilterValues {
@@ -198,12 +330,12 @@ function Get-ShellFilterValues {
         $word = $Words[$wordIndex]
         $attachedMatch = [regex]::Match($word, '^(--[A-Za-z]+)=(.*)$')
         if ($attachedMatch.Success -and $attachedMatch.Groups[1].Value.ToLowerInvariant() -in $filterFlagNames) {
-            $filterValues.Add($attachedMatch.Groups[2].Value)
+            Add-FilterValue -FilterValues $filterValues -Value $attachedMatch.Groups[2].Value
         } elseif ($word.ToLowerInvariant() -in $filterFlagNames -and $wordIndex + 1 -lt $Words.Count) {
-            $filterValues.Add($Words[$wordIndex + 1])
+            Add-FilterValue -FilterValues $filterValues -Value $Words[$wordIndex + 1]
             $wordIndex++
         } elseif ($word -match '\*\.') {
-            $filterValues.Add($word)
+            Add-FilterValue -FilterValues $filterValues -Value $word
         }
     }
     return $filterValues.ToArray()
@@ -228,7 +360,40 @@ function Test-NamePatternStartsWithClassName {
     return $fileName -match '^[A-Za-z0-9_-]*[A-Za-z][A-Za-z0-9_-]*'
 }
 
+function Expand-BraceAlternatives {
+    param([string]$Text)
+
+    $expandedTexts = [System.Collections.Generic.List[string]]::new()
+    $pendingTexts = [System.Collections.Generic.Stack[string]]::new()
+    $pendingTexts.Push($Text)
+    while ($pendingTexts.Count -gt 0 -and $expandedTexts.Count + $pendingTexts.Count -le $maxNamePatternParts) {
+        $currentText = $pendingTexts.Pop()
+        $braceMatch = [regex]::Match($currentText, '\{([^{}]*,[^{}]*)\}')
+        if (-not $braceMatch.Success -or $currentText.Length -gt 500) {
+            $expandedTexts.Add($currentText)
+            continue
+        }
+        $prefix = $currentText.Substring(0, $braceMatch.Index)
+        $suffix = $currentText.Substring($braceMatch.Index + $braceMatch.Length)
+        foreach ($alternative in $braceMatch.Groups[1].Value.Split(',')) { $pendingTexts.Push($prefix + $alternative + $suffix) }
+    }
+    return $expandedTexts.ToArray() + $pendingTexts.ToArray()
+}
+
 function Test-NamePatternIsCodeSearch {
+    param([string]$NamePattern)
+
+    $braceParts = @(Expand-BraceAlternatives -Text $NamePattern)
+    if ($braceParts.Count -gt $maxNamePatternParts) { return $true }
+    $namePatternParts = @($braceParts | ForEach-Object { $_.Split(',') })
+    if ($namePatternParts.Count -gt $maxNamePatternParts) { return $true }
+    foreach ($namePatternPart in $namePatternParts) {
+        if (Test-SingleNamePatternIsCodeSearch -NamePattern $namePatternPart) { return $true }
+    }
+    return $false
+}
+
+function Test-SingleNamePatternIsCodeSearch {
     param([string]$NamePattern)
 
     $fileName = $NamePattern -replace '^.*[\\/]', ''
@@ -250,37 +415,14 @@ function Get-GrepToolFilterValues {
 
     $filterValues = [System.Collections.Generic.List[string]]::new()
     foreach ($propertyName in 'glob', 'type') {
-        $propertyValue = [string]$ToolInput.$propertyName
-        if ($propertyValue) { $filterValues.Add($propertyValue) }
+        Add-FilterValue -FilterValues $filterValues -Value ([string]$ToolInput.$propertyName)
     }
     $searchPath = [string]$ToolInput.path
-    $isNetworkPath = $searchPath -match '^(\\\\|//)'
-    if ($searchPath -match '\.[A-Za-z0-9]+$' -and -not $isNetworkPath) {
-        $repoRoot = Get-RepoRoot -WorkingDirectory $WorkingDirectory
-        if ($repoRoot -and (Test-PathInsideRoot -Path $searchPath -Root $repoRoot -WorkingDirectory $WorkingDirectory)) {
-            $fullPath = [System.IO.Path]::GetFullPath($searchPath, $WorkingDirectory)
-            if (Test-Path -LiteralPath $fullPath -PathType Leaf) { $filterValues.Add([System.IO.Path]::GetExtension($fullPath)) }
-        }
+    if ($searchPath -match '\.[A-Za-z0-9]+$') {
+        $fullPath = Resolve-SearchPath -Path $searchPath -Directory $WorkingDirectory
+        if ($fullPath -and [System.IO.File]::Exists($fullPath)) { $filterValues.Add([System.IO.Path]::GetExtension($fullPath)) }
     }
     return $filterValues.ToArray()
-}
-
-function Get-RepoRoot {
-    param([string]$WorkingDirectory)
-
-    $repoRoot = $WorkingDirectory
-    while ($repoRoot -and -not (Test-Path -LiteralPath (Join-Path $repoRoot '.git'))) {
-        $repoRoot = Split-Path -Parent $repoRoot
-    }
-    return $repoRoot
-}
-
-function Test-PathInsideRoot {
-    param([string]$Path, [string]$Root, [string]$WorkingDirectory)
-
-    $fullPath = [System.IO.Path]::GetFullPath($Path, $WorkingDirectory).TrimEnd('\')
-    $fullRoot = [System.IO.Path]::GetFullPath($Root).TrimEnd('\')
-    return $fullPath -ieq $fullRoot -or $fullPath.StartsWith($fullRoot + '\', [System.StringComparison]::OrdinalIgnoreCase)
 }
 
 function Get-SedAddressPattern {
@@ -311,44 +453,201 @@ function Get-SedAddressPattern {
     return $null
 }
 
-function Get-ShellSearchPattern {
+function Read-ShellSearchArguments {
     param([string[]]$Words)
 
     $commandIndex = 0
     while ($commandIndex -lt $Words.Count -and (Get-CommandName $Words[$commandIndex]) -notin $patternSearchCommandNames) { $commandIndex++ }
     if ($commandIndex -ge $Words.Count) { return $null }
-    if ((Get-CommandName $Words[$commandIndex]) -eq 'sed') { return Get-SedAddressPattern -Words $Words }
 
-    $explicitPatterns = [System.Collections.Generic.List[string]]::new()
-    $firstPositionalWord = $null
-    $patternComesFromFile = $false
+    $arguments = [pscustomobject]@{
+        CommandName          = Get-CommandName $Words[$commandIndex]
+        ExplicitPatterns     = [System.Collections.Generic.List[string]]::new()
+        Positionals          = [System.Collections.Generic.List[string]]::new()
+        PathFlagValues       = [System.Collections.Generic.List[string]]::new()
+        PatternComesFromFile = $false
+    }
+    if ($arguments.CommandName -eq 'sed') { return $arguments }
+
+    $isPowerShellSearch = $arguments.CommandName -in 'select-string', 'sls'
     $afterDoubleDash = $false
     for ($wordIndex = $commandIndex + 1; $wordIndex -lt $Words.Count; $wordIndex++) {
         $word = $Words[$wordIndex]
         $hasNextWord = $wordIndex + 1 -lt $Words.Count
-        if ($afterDoubleDash) {
-            if ($null -eq $firstPositionalWord) { $firstPositionalWord = $word }
+        if ($word -match $redirectionPattern) {
+            break
+        } elseif ($afterDoubleDash) {
+            $arguments.Positionals.Add($word)
         } elseif ($word -eq '--') {
             $afterDoubleDash = $true
         } elseif ($word -match '^--regexp=(.*)$' -or $word -match '(?i)^/c:(.*)$') {
-            $explicitPatterns.Add($Matches[1])
+            $arguments.ExplicitPatterns.Add($Matches[1])
         } elseif ($word -ceq '-e' -or $word -eq '--regexp' -or $word -match '(?i)^-patt(e(r(n)?)?)?$') {
-            if ($hasNextWord) { $explicitPatterns.Add($Words[$wordIndex + 1]) }
+            if ($hasNextWord) { $arguments.ExplicitPatterns.Add($Words[$wordIndex + 1]) }
             $wordIndex++
         } elseif ($word -ceq '-f' -or $word -eq '--file') {
-            $patternComesFromFile = $true
+            $arguments.PatternComesFromFile = $true
             $wordIndex++
-        } elseif ($word -cin $caseSensitiveValueFlagNames -or $word.ToLowerInvariant() -in $valueFlagNames) {
+        } elseif ($isPowerShellSearch -and $word -match $powerShellPathFlagPattern) {
+            if ($hasNextWord) { $arguments.PathFlagValues.AddRange([string[]]($Words[$wordIndex + 1] -split ',')) }
+            $wordIndex++
+        } elseif ($word -cin $caseSensitiveValueFlagNames -or $word.ToLowerInvariant() -in $valueFlagNames -or ($isPowerShellSearch -and $word -match $powerShellValueFlagPattern)) {
             $wordIndex++
         } elseif ($word.StartsWith('-') -or $word -match '^/[A-Za-z](:.*)?$') {
             continue
-        } elseif ($null -eq $firstPositionalWord) {
-            $firstPositionalWord = $word
+        } else {
+            $arguments.Positionals.Add($word)
         }
     }
-    if ($explicitPatterns.Count -gt 0) { return $explicitPatterns -join '|' }
-    if ($patternComesFromFile) { return $null }
-    return $firstPositionalWord
+    return $arguments
+}
+
+function Get-ShellSearchPattern {
+    param([string[]]$Words)
+
+    $arguments = Read-ShellSearchArguments -Words $Words
+    if (-not $arguments) { return $null }
+    if ($arguments.CommandName -eq 'sed') { return Get-SedAddressPattern -Words $Words }
+    if ($arguments.ExplicitPatterns.Count -gt 0) { return $arguments.ExplicitPatterns -join '|' }
+    if ($arguments.PatternComesFromFile -or $arguments.Positionals.Count -eq 0) { return $null }
+    return $arguments.Positionals[0]
+}
+
+function Get-SedFileOperands {
+    param([string[]]$Words)
+
+    $commandIndex = 0
+    while ($commandIndex -lt $Words.Count -and (Get-CommandName $Words[$commandIndex]) -ne 'sed') { $commandIndex++ }
+    $hasExpression = $false
+    $operands = [System.Collections.Generic.List[string]]::new()
+    for ($wordIndex = $commandIndex + 1; $wordIndex -lt $Words.Count; $wordIndex++) {
+        $word = $Words[$wordIndex]
+        if ($word -match $redirectionPattern) {
+            break
+        } elseif ($word -match '^--expression=') {
+            $hasExpression = $true
+        } elseif ($word -ceq '--expression' -or $word -cmatch '^-[A-Za-z]*e$') {
+            $hasExpression = $true
+            $wordIndex++
+        } elseif (-not $word.StartsWith('-')) {
+            $operands.Add($word)
+        }
+    }
+    if (-not $hasExpression -and $operands.Count -gt 0) { $operands.RemoveAt(0) }
+    return $operands.ToArray()
+}
+
+function Get-ShellSearchPathOperands {
+    param([string[]]$Words)
+
+    $arguments = Read-ShellSearchArguments -Words $Words
+    if (-not $arguments) { return @() }
+    if ($arguments.CommandName -eq 'sed') { return Get-SedFileOperands -Words $Words }
+    if ($arguments.PathFlagValues.Count -gt 0) { return $arguments.PathFlagValues.ToArray() }
+    $patternIsExplicit = $arguments.ExplicitPatterns.Count -gt 0 -or $arguments.PatternComesFromFile
+    $skippedCount = if ($patternIsExplicit) { 0 } else { 1 }
+    return @($arguments.Positionals | Select-Object -Skip $skippedCount)
+}
+
+function Resolve-SearchPath {
+    param([string]$Path, [string]$Directory)
+
+    if ([string]::IsNullOrWhiteSpace($Path) -or $Path -match $uncPathPattern) { return $null }
+    $expandedPath = $Path
+    if ($expandedPath -match '^~(?=$|[\\/])') {
+        $expandedPath = $env:USERPROFILE + $expandedPath.Substring(1)
+    } elseif ($expandedPath -match '^/([A-Za-z])(?=$|/)') {
+        $expandedPath = $Matches[1].ToUpperInvariant() + ':' + $expandedPath.Substring(2)
+        if ($expandedPath.Length -eq 2) { $expandedPath += '\' }
+    }
+    $wildcardIndex = $expandedPath.IndexOfAny([char[]]'*?[')
+    if ($wildcardIndex -ge 0) {
+        $separatorIndex = $expandedPath.LastIndexOfAny([char[]]'/\', $wildcardIndex)
+        $expandedPath = if ($separatorIndex -ge 0) { $expandedPath.Substring(0, $separatorIndex + 1) } else { '.' }
+    }
+    try {
+        if ([System.IO.Path]::IsPathFullyQualified($expandedPath)) {
+            $fullPath = [System.IO.Path]::GetFullPath($expandedPath)
+        } elseif ([System.IO.Path]::IsPathFullyQualified($Directory)) {
+            $fullPath = [System.IO.Path]::GetFullPath($expandedPath, $Directory)
+        } else {
+            return $null
+        }
+    } catch {
+        return $null
+    }
+    if ($fullPath -match $uncPathPattern) { return $null }
+    if ($fullPath.Length -gt 3) { $fullPath = $fullPath.TrimEnd('\') }
+    return $fullPath
+}
+
+function Resolve-OperandPaths {
+    param([string[]]$Operands, [string]$Directory)
+
+    $operandList = if ($Operands.Count -gt 0) { $Operands } else { @('.') }
+    foreach ($operand in ($operandList | Select-Object -First $maxSearchPaths)) {
+        $pathText = if ($operand -match '[$%`]') { '.' } else { $operand }
+        $resolvedPath = Resolve-SearchPath -Path $pathText -Directory $Directory
+        if ($resolvedPath) { $resolvedPath }
+    }
+}
+
+function Get-IndexedRoot {
+    param([string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace($Path) -or $Path -match $uncPathPattern) { return $null }
+    $cacheKey = $Path.ToLowerInvariant()
+    if ($indexedRootCache.ContainsKey($cacheKey)) { return $indexedRootCache[$cacheKey] }
+    $indexedRoot = $null
+    $level = $Path
+    while ($level) {
+        if ([System.IO.File]::Exists([System.IO.Path]::Combine($level, '.codegraph', 'codegraph.db'))) {
+            $indexedRoot = $level
+            break
+        }
+        $gitPath = [System.IO.Path]::Combine($level, '.git')
+        if ([System.IO.Directory]::Exists($gitPath) -or [System.IO.File]::Exists($gitPath)) { break }
+        $level = [System.IO.Path]::GetDirectoryName($level)
+    }
+    $indexedRootCache[$cacheKey] = $indexedRoot
+    return $indexedRoot
+}
+
+function Test-SearchReachesIndex {
+    param([string[]]$SearchPaths, [string]$WorkingDirectory)
+
+    $workingRoot = Get-IndexedRoot -Path $WorkingDirectory
+    foreach ($searchPath in ($SearchPaths | Select-Object -First $maxSearchPaths)) {
+        if (Get-IndexedRoot -Path $searchPath) { return $true }
+        if ($workingRoot -and $workingRoot.StartsWith($searchPath.TrimEnd('\') + '\', [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
+    }
+    return $false
+}
+
+function Get-SegmentDirectories {
+    param([object[]]$Segments, [string]$WorkingDirectory)
+
+    $currentDirectory = $WorkingDirectory
+    $directoryStack = [System.Collections.Generic.Stack[string]]::new()
+    $directories = [System.Collections.Generic.List[string]]::new()
+    foreach ($segment in $Segments) {
+        $directories.Add($currentDirectory)
+        if ($segment.AfterPipe) { continue }
+        $words = @(Get-CommandWords -Words $segment.Words)
+        $commandName = Get-CommandName $words[0]
+        if ($commandName -eq 'popd') {
+            if ($directoryStack.Count -gt 0) { $currentDirectory = $directoryStack.Pop() }
+            continue
+        }
+        if ($commandName -notin $directoryChangeCommandNames) { continue }
+        $operand = $words | Select-Object -Skip 1 | Where-Object { $_ -notmatch '(?i)^(-[A-Za-z]+|/d)$' } | Select-Object -First 1
+        if ($operand -match '[$%`]' -or $operand -eq '-') { continue }
+        if ($commandName -eq 'pushd') { $directoryStack.Push($currentDirectory) }
+        $targetPath = if ($operand) { $operand } else { $env:USERPROFILE }
+        $resolvedDirectory = Resolve-SearchPath -Path $targetPath -Directory $currentDirectory
+        $currentDirectory = if ($resolvedDirectory) { $resolvedDirectory } else { '' }
+    }
+    return $directories.ToArray()
 }
 
 function Get-SymbolNames {
@@ -415,37 +714,43 @@ try {
     if ([string]::IsNullOrWhiteSpace($workingDirectory)) { exit 0 }
     $toolInput = $payload.tool_input
 
-    $toolSearchPath = ''
+    $searchPaths = @()
     $contentPattern = $null
     if ($toolName -eq 'Grep') {
         $contentPattern = [string]$toolInput.pattern
         $filterValues = Get-GrepToolFilterValues -ToolInput $toolInput -WorkingDirectory $workingDirectory
         if (-not (Test-FiltersAllowCode -FilterValues $filterValues)) { exit 0 }
-        $toolSearchPath = [string]$toolInput.path
+        $searchPaths = @(Resolve-OperandPaths -Operands @([string]$toolInput.path | Where-Object { $_ }) -Directory $workingDirectory)
         $searchCommandWord = 'Grep'
     } elseif ($toolName -eq 'Glob') {
         $globPattern = [string]$toolInput.pattern
         if (Test-NamePatternStartsWithClassName -NamePattern $globPattern) { exit 0 }
         if (-not (Test-NamePatternIsCodeSearch -NamePattern $globPattern)) { exit 0 }
-        $toolSearchPath = [string]$toolInput.path
+        $searchPaths = @(Resolve-OperandPaths -Operands @([string]$toolInput.path | Where-Object { $_ }) -Directory $workingDirectory)
         $searchCommandWord = 'Glob'
     } else {
         $commandText = [string]$toolInput.command
         if ($commandText -notmatch $commandPrefilterPattern) { exit 0 }
         $commandSegments = ConvertTo-CommandSegments -CommandText $commandText
-        $searchWords = Get-SearchSegmentWords -Segments $commandSegments
+        $segmentDirectories = Get-SegmentDirectories -Segments $commandSegments -WorkingDirectory $workingDirectory
+        $contentSearch = Get-SearchSegmentWords -Segments $commandSegments -SegmentDirectories $segmentDirectories
         $searchCommandWord = $null
-        if ($searchWords) {
+        if ($contentSearch) {
+            $searchWords = $contentSearch.Words
             $filterValues = Get-ShellFilterValues -Words $searchWords
             if (Test-FiltersAllowCode -FilterValues $filterValues) {
                 $searchCommandWord = $searchWords | ForEach-Object { Get-CommandName $_ } | Where-Object { $_ -in $patternSearchCommandNames } | Select-Object -First 1
                 if (-not $searchCommandWord) { $searchCommandWord = 'search' }
                 $contentPattern = Get-ShellSearchPattern -Words $searchWords
+                $pathOperands = @(Get-ShellSearchPathOperands -Words $contentSearch.PathWords)
+                $searchPaths = @(Resolve-OperandPaths -Operands $pathOperands -Directory $contentSearch.Directory)
             }
         }
         if (-not $searchCommandWord) {
-            $searchCommandWord = Get-FileNameSearch -Segments $commandSegments -ToolName $toolName
-            if (-not $searchCommandWord) { exit 0 }
+            $fileNameSearch = Get-FileNameSearch -Segments $commandSegments -ToolName $toolName -SegmentDirectories $segmentDirectories
+            if (-not $fileNameSearch) { exit 0 }
+            $searchCommandWord = $fileNameSearch.CommandName
+            $searchPaths = @($fileNameSearch.SearchPaths)
         }
     }
 
@@ -453,10 +758,7 @@ try {
     if ($agentType -in $exemptAgentTypes) { exit 0 }
 
     if (-not (Get-Command codegraph.cmd -CommandType Application -ErrorAction SilentlyContinue)) { exit 0 }
-    $repoRoot = Get-RepoRoot -WorkingDirectory $workingDirectory
-    if (-not $repoRoot) { exit 0 }
-    if (-not (Test-Path -LiteralPath (Join-Path $repoRoot '.codegraph\codegraph.db'))) { exit 0 }
-    if ($toolSearchPath -and -not (Test-PathInsideRoot -Path $toolSearchPath -Root $repoRoot -WorkingDirectory $workingDirectory)) { exit 0 }
+    if (-not (Test-SearchReachesIndex -SearchPaths $searchPaths -WorkingDirectory $workingDirectory)) { exit 0 }
 
     $symbolNames = if ($contentPattern) { @(Get-SymbolNames -Pattern $contentPattern) } else { @() }
     $blockedSymbolNames = $symbolNames

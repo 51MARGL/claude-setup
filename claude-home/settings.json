@@ -201,6 +201,62 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "matcher": "EnterWorktree",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pwsh",
+            "args": [
+              "-NoProfile",
+              "-NonInteractive",
+              "-File",
+              "{{CLAUDE_HOME}}/hooks/codegraph-init.ps1",
+              "worktree"
+            ],
+            "timeout": 660,
+            "async": true
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(*worktree add*)",
+            "command": "pwsh",
+            "args": [
+              "-NoProfile",
+              "-NonInteractive",
+              "-File",
+              "{{CLAUDE_HOME}}/hooks/codegraph-init.ps1",
+              "worktree"
+            ],
+            "timeout": 660,
+            "async": true
+          }
+        ]
+      },
+      {
+        "matcher": "PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "PowerShell(*worktree add*)",
+            "command": "pwsh",
+            "args": [
+              "-NoProfile",
+              "-NonInteractive",
+              "-File",
+              "{{CLAUDE_HOME}}/hooks/codegraph-init.ps1",
+              "worktree"
+            ],
+            "timeout": 660,
+            "async": true
+          }
+        ]
       }
     ],
     "UserPromptSubmit": [
