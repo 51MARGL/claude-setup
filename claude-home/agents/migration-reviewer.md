@@ -1,7 +1,7 @@
 ---
 name: migration-reviewer
 description: Use to review a database change (EF Core migration, DbContext change, SQL script) for safety on a database that holds data, and for reversal. Triggers on review migration, schema change, DDL, ALTER TABLE, drop column, is this migration safe. Reports findings only — never edits files and never runs a migration against a database.
-tools: Read, Grep, Glob, PowerShell, Bash
+tools: Read, Grep, Glob, PowerShell, Bash, mcp__codegraph__codegraph_explore
 model: sonnet
 ---
 

@@ -19,7 +19,7 @@ Run this in PowerShell 7.2 or later in the clone:
 | Switch | Effect |
 |---|---|
 | `-SkipStatusLine` | Do not install the statusline. |
-| `-SkipMcp` | Do not add the MCP servers. |
+| `-SkipMcp` | Do not add the MCP servers and do not install CodeGraph. |
 | `-SkipOutputStyle` | Do not set `outputStyle`. |
 | `-SkipAutoUpdate` | Do not add the `update.ps1` `SessionStart` hook for automatic updates. The installer still adds the `main-session-rules.ps1` `SessionStart` hook. The switch does not remove a hook that exists. See "Automatic updates". |
 | `-UseSavedSwitches` | Use the switches of the last manual run. `update.ps1` uses this switch. You cannot combine it with a `-Skip` switch. |
@@ -35,7 +35,7 @@ After the install, restart Claude Code.
 ## Automatic updates
 
 Claude Code runs `update.ps1` when a session starts. The hook is not `async`. Claude Code shows the
-text "Checking for team Claude setup update..." while the hook runs. The first reply of Claude waits
+text "Checking for team Claude setup update and CodeGraph..." while the hook runs. The first reply of Claude waits
 for the hook. The wait is under 1 second when no check is due. The wait is up to about 2 to 3 minutes
 when the script fetches and installs. The fetch timeout is 30 seconds, the install timeout is 120
 seconds, and the hook timeout is 400 seconds.
@@ -63,6 +63,17 @@ untracked files in `claude-home`, a git command failed or timed out, the fast-fo
 `install.ps1` failed. The script records the last stop message in
 `%USERPROFILE%\.claude\team-setup\update-last-stop.json`. It deletes this file only when the update
 succeeds.
+
+The automatic update installs CodeGraph when `codegraph` is not on `PATH` and `-SkipMcp` is off. It
+runs `npm i -g @colbymchenry/codegraph@latest` with a timeout of 180 s. It tries once per 24 hours
+and records the time in `%USERPROFILE%\.claude\team-setup\codegraph-install-last-try.txt`. It deletes
+the file when CodeGraph is installed. A second session that starts at the same time skips the
+install. After a successful install, the message is "The update installed CodeGraph <version>.
+Restart Claude Code to use the codegraph MCP server and the repo index." When the install fails, the
+message is "CodeGraph failed to install", with the npm command, the restart request, and the path of
+`update.log`. When `npm` is missing, the message shows the npm command only. When `codegraph.cmd` is
+in the npm prefix but `package.json` has no readable version, the install is incomplete and the
+update installs again (once per 24 hours).
 
 The script keeps the time of the last check in `%USERPROFILE%\.claude\team-setup\update-last-check.txt`.
 The file holds an ISO 8601 time with an offset, for example `2026-09-30T14:05:00.0000000+02:00`.
@@ -97,6 +108,13 @@ Each push to `master` runs code on every machine that has the automatic update. 
 the next session start, with the rights of the user. The update runs `install.ps1` and `update.ps1`
 from the clone.
 
+Each session start can also run `npm i -g @colbymchenry/codegraph@latest` with no prompt, when
+`codegraph` is not installed. npm gets the package from the public registry and runs the package
+install scripts. The script runs npm in `%USERPROFILE%\.claude\team-setup` and removes the
+`ANTHROPIC_*` and `CLAUDE_CODE_*` variables from the environment of npm. This is defence in depth
+only. The install scripts run as the user and can read user files, such as
+`%USERPROFILE%\.claude\.credentials.json`. Run `install.ps1` with `-SkipMcp` to turn this off.
+
 Protect `master` with these steps:
 
 1. Set a branch policy on your Git server for `master` that requires a pull request.
@@ -115,8 +133,9 @@ Before each merge, the update writes the list of new commits and the changed fil
 commits. It also names a file when a new commit changes it. The message can name these files:
 
 1. The files that run code: `install.ps1`, `update.ps1`, `claude-home/hooks/main-session-rules.ps1`,
-   `claude-home/hooks/notify.ps1`, `claude-home/statusline.ps1`, and
-   `claude-home/skills/strategic-compact/suggest-compact.ps1`.
+   `claude-home/hooks/notify.ps1`, `claude-home/hooks/codegraph-init.ps1`, `claude-home/hooks/codegraph-search-guard.ps1`,
+   `claude-home/statusline.ps1`,
+   and `claude-home/skills/strategic-compact/suggest-compact.ps1`.
 2. The files that set permissions, hooks, tools, or the model: `claude-home/settings.json`,
    `mcp/servers.json`, and the 16 agent files `claude-home/agents/<name>.md`.
 3. The rules that the main session loads or follows: `claude-home/CLAUDE-TEAM.md`,
@@ -277,11 +296,22 @@ team reviews it there, and each member gets it on the next automatic update.
 6. It never changes a hook that already exists in your `settings.json`.
 7. It adds the MCP servers in `mcp\servers.json` with `claude mcp add --scope user`. An entry has
    the type `stdio` or `http`. The installer finds your existing servers in the `mcpServers` keys of
-   `%USERPROFILE%\.claude.json`. When it cannot read that file, it runs `claude mcp get`. It never
-   changes or removes a server that exists. A changed entry in `servers.json` therefore never
-   reaches a machine that has the server. To get the new entry, run
-   `claude mcp remove <name> --scope user`, then run `install.ps1` again. When `npx` is missing for
+   `%USERPROFILE%\.claude.json`. When it cannot read that file, it runs `claude mcp get`. It adds an
+   entry that has `alwaysLoad` with `claude mcp add-json --scope user`. It never changes or removes
+   another server that exists. A changed entry in `servers.json` therefore does not reach a machine
+   that has the server. To get the new entry, run `claude mcp remove <name> --scope user`, then run
+   `install.ps1` again. One exception exists: an existing server that has no `alwaysLoad` is replaced
+   (removed, then added with `add-json`) when the entry in `servers.json` has `alwaysLoad`, and when
+   `type`, `command`, and `args` are the same, `env` is absent or empty, and the server has no other
+   key. When the add fails, the installer adds the old entry again. It then warns in an automatic
+   run and stops with an error in a manual run. When the definition differs, or the installer cannot
+   read `.claude.json`, it skips the server and prints a warning. When `npx` is missing for
    a `stdio` server, the installer prints a Node.js 18 warning and still adds the server.
+   Before it adds the servers, a manual run installs CodeGraph with
+   `npm i -g @colbymchenry/codegraph@latest`. The `install.ps1` run of the automatic update only
+   prints a warning, and then `update.ps1` does the install. The installer skips CodeGraph when it is
+   already installed, and it never upgrades it. When npm fails, the installer prints a warning and
+   continues. `-SkipMcp` skips this step.
 8. It records the path of each file that it installs in
    `%USERPROFILE%\.claude\team-setup\install-state.json`. It overwrites an installed file that
    differs from the team copy. It makes no backup. It deletes a file that an earlier install added
@@ -312,14 +342,16 @@ team reviews it there, and each member gets it on the next automatic update.
 | `claude-home\output-styles\audhd.md` | The AuDHD output style. The installer selects it for you when `settings.json` has no other style. You can also select it with `/config` → Output style. |
 | `claude-home\skills\strategic-compact\` | The skill and the `UserPromptSubmit` and `PostToolUse` hooks that suggest `/compact` at 15% of the window, then at each further 10%. The hooks read the context size from the file that `statusline.ps1` writes. When that file is missing or older than 10 minutes, they read the transcript. Set `COMPACT_CONTEXT_PERCENT` (default `15`) and `COMPACT_CONTEXT_WINDOW` (default `1000000` tokens, used only when the hooks read the transcript, so set `200000` for a model without the 1M window) to change the values. When the context falls below 15%, for example after `/compact`, the hooks start again. The state is in `~/.claude/cache/strategic-compact/`. Each session has `<session_id>.json` (the last reported level, written by the hook) and `<session_id>.context.json` (the context percent, written by `statusline.ps1`). The hook deletes files older than 7 days. The skill is adapted from `WorldFlowAI/everything-claude-code`. The upstream script counts edits and keys its counter by the shell process id. This version reads the status line file, falls back to the transcript, keys its state by `session_id`, and runs in PowerShell. |
 | `claude-home\skills\mistakes-log\` | The skill that holds the entry format, the repeat rule, and the graduation steps for `MISTAKES.md`. |
-| `claude-home\hooks\main-session-rules.ps1` | The `SessionStart` hook that prints `CLAUDE-MAIN.md` as context in the main session. It runs at start, resume, clear, and compact. It prints nothing in a subagent. When the file is missing or the read fails, it shows a message that the rules did not load. |
+| `claude-home\hooks\main-session-rules.ps1` | The `SessionStart` hook that prints `CLAUDE-MAIN.md` as context in the main session. It runs at start, resume, clear, and compact. It prints nothing in a subagent. When the file is missing or the read fails, it shows a message that the rules did not load. It also adds the CodeGraph context line when `<repo>\.codegraph\codegraph.db` exists (the repo is the first folder with `.git`, from the working directory up) and `codegraph.cmd` is on `PATH`. |
 | `claude-home\hooks\notify.ps1` | The hook that shows a Windows toast when Claude needs you. See the next section. |
+| `claude-home\hooks\codegraph-init.ps1` | The synchronous `SessionStart` hook (`startup`, timeout 660 s). Claude Code shows the text "Initializing CodeGraph..." while it runs. It runs `codegraph init --yes` in the git repo of the session when the repo has no CodeGraph index. The first start in such a repo waits for the init. It does nothing in a subagent, when `codegraph` or git is missing, outside a git repo, in your home folder, in a drive root, or in a repo that tracks `.codegraph` (any letter case). It adds `.codegraph/` to `.git/info/exclude` of the repo (the common git folder, so all worktrees), so `git status` stays clean. It stops its own process after 570 s. After a success it prints "CodeGraph indexed <repo> in <N> s." and adds the CodeGraph context line to the session context. After a failure or a timeout it prints "CodeGraph init failed in <repo>. The hook tries again after 24 h. See <log>." and writes `%USERPROFILE%\.claude\team-setup\codegraph-init-<hash>.failed`, and it skips that repo for 24 hours. A success deletes the file. A pending marker `%USERPROFILE%\.claude\team-setup\codegraph-init-<hash>.pending` makes a run that was killed during init run init again. Every other path prints nothing. The `codegraph` MCP server looks for the index again at each tool call, so the index works in the same session. The log is `%USERPROFILE%\.claude\team-setup\codegraph-init.log` (1 MB rotation). The hook has no opt-out. |
+| `claude-home\hooks\codegraph-search-guard.ps1` | The hook that makes the main session and each agent use CodeGraph before a code search. Mode `pre` is a synchronous `PreToolUse` hook (matcher `Grep|Glob|Bash|PowerShell`, timeout 10 s). It denies a search with `grep`, `egrep`, `fgrep`, `rg`, `findstr`, `Select-String`, `sls`, `git grep`, or `xargs grep`, `sed` with a regex address, and the Grep tool, when the filter is absent or names `.cs`, `.ts`, `.tsx`, `.js`, or `.jsx`. It also denies a file-name search with the Glob tool, `find`, or a recursive `Get-ChildItem`, `gci`, `dir`, or `ls` listing, when the name pattern has no extension or names a code extension. A name that is a known extensionless file, such as `Dockerfile`, a name with a dotted prefix such as `MyApp.Services*`, and a directory search are allowed. A Glob tool call is allowed when the file-name part of the pattern starts with a literal name before any wildcard, such as `**/OrderService*.cs`, so the model can get the file names of one class. The deny reason tells the agent not to repeat the blocked search with another tool. It denies only when the repo has `.codegraph\codegraph.db` and `codegraph.cmd` is on `PATH`. It skips the agents `git`, `devops`, `pr-reviewer`, `claude-code-guide`, and `statusline-setup`. A Grep or Glob `path` outside the repo is allowed. Mode `post` is a `PostToolUse` hook (matcher `mcp__codegraph__codegraph_explore`) that opens the gate. The gate of a session and agent opens after one `codegraph_explore` call or after 3 denies. After the gate opens, a search for a symbol name (a camelCase, PascalCase, or `snake_case` identifier) is still denied, until a `codegraph_explore` call follows a deny of the same names, or until 3 symbol denies run with no call between them. A plain-text search runs. The state is in `%USERPROFILE%\.claude\team-setup\codegraph-search-guard\` (files older than 7 days are deleted). The log is `%USERPROFILE%\.claude\team-setup\codegraph-search-guard.log` (1 MB rotation). It fails open: an error or a timeout lets the call run. A shell search of a folder outside the repo is still denied, and `git -C x grep` is not matched. Each Grep, Glob, Bash, and PowerShell call starts `pwsh` once, about 1 second, also for a command that is not a search. The hook has no opt-out. |
 | `claude-home\statusline.ps1` | The statusline script. It shows the context percent as `ctx N%` and the session tokens as `session <N> tok`. It also writes the context size of the session for the strategic-compact hooks. |
-| `mcp\servers.json` | User-scope MCP servers: `microsoft-learn` (http), `playwright` (stdio, `cmd /c npx -y @playwright/mcp@latest --headless --isolated --browser msedge --output-dir %TEMP%\playwright-mcp`), and `context7` (http, no key). See "MCP servers". |
+| `mcp\servers.json` | User-scope MCP servers: `microsoft-learn` (http), `playwright` (stdio, `cmd /c npx -y @playwright/mcp@latest --headless --isolated --browser msedge --output-dir %TEMP%\playwright-mcp`), `context7` (http, no key), and `codegraph` (stdio, `cmd /c codegraph serve --mcp`, `alwaysLoad`). See "MCP servers". |
 
 ## MCP servers
 
-The installer adds three MCP servers at user scope. See step 7 of "What the installer does".
+The installer adds four MCP servers at user scope. See step 7 of "What the installer does".
 
 The team settings disable the claude.ai connectors with `"disableClaudeAiConnectors": true`. To
 enable the connectors again, set `"disableClaudeAiConnectors": false` in your own `settings.json`.
@@ -329,6 +361,15 @@ enable the connectors again, set `"disableClaudeAiConnectors": false` in your ow
 | `microsoft-learn` | http | Microsoft and Azure documentation. |
 | `playwright` | stdio | The browser check step of `tester`. It runs Microsoft Edge headless and isolated. |
 | `context7` | http | Library documentation. It needs no key. |
+| `codegraph` | stdio | The code index of the repo. The "Code search" rule in `CLAUDE-TEAM.md` tells the main session and each agent to use the tool `codegraph_explore` first. The entry has `alwaysLoad`, so Claude Code does not defer the tool. When a session still defers it, the rule tells the reader to load it with ToolSearch `select:mcp__codegraph__codegraph_explore`. The rule also asks the reader, before each Grep on a code file, whether the target is a symbol name. They use Grep and Glob when the search text is not a symbol name, when the file type is not indexed (such as PowerShell, Markdown, JSON, and config files), when the repo has no index, or when the tool is missing. The agents `architect`, `planner`, `code-reviewer`, `security-reviewer`, `migration-reviewer`, `style-reviewer`, `docs-updater`, `tester`, and `Explore` list the tool. The 4 developer agents have all tools. `git`, `devops`, and `pr-reviewer` do not get it. The team settings allow this tool with no prompt (a permanent grant) and set `CODEGRAPH_TELEMETRY` to `0`. |
+
+CodeGraph needs the npm package `@colbymchenry/codegraph` (MIT) and about 265 MB of disk space. To
+upgrade it, close all Claude Code sessions, because a running server holds the binary. Then run
+`npm i -g @colbymchenry/codegraph@latest`. With nvm4w, a global package belongs to the active
+Node.js version.
+
+The hook does not use or delete a committed index. The `codegraph` MCP server still reads a committed
+`.codegraph/codegraph.db`.
 
 The team settings deny 4 `playwright` tools: `browser_evaluate`, `browser_run_code_unsafe`,
 `browser_file_upload`, and `browser_install`.
@@ -384,7 +425,7 @@ You can also disable them in `/hooks`.
 - PowerShell 7.2 or later (`pwsh`) on `PATH`. `install.ps1` and `update.ps1` need it. The hooks and the statusline run through `pwsh`.
 - Windows PowerShell 5.1 (`powershell.exe`). Windows includes it. The toast needs it.
 - Claude Code CLI (`claude`) on `PATH` for the MCP step.
-- Node.js 18 or later (`npx` on `PATH`), for the `playwright` MCP server.
+- Node.js 18 or later (`npx` and `npm` on `PATH`), for the `playwright` MCP server and the `codegraph` package.
 - Microsoft Edge, for the `playwright` MCP server.
 - Network access to your Azure DevOps server, for the `devops` and `pr-reviewer` agents.
 - Authentication for the `devops` agent. In the session, give a personal access token (PAT), the name of an environment variable that holds a PAT, or Windows integrated authentication. A PAT that you paste in the chat stays in the session transcripts under `%USERPROFILE%\.claude\projects`.

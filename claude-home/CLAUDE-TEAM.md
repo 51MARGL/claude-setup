@@ -17,6 +17,26 @@ Example: 3.2 hours of work is 0.4 MD. Write 0.4 and not 3.2.
 
 Why: the team writes effort in MD in all effort fields.
 
+## Code search
+
+1. Use the `codegraph_explore` tool first to find a symbol, its callers, its usages, or the structure of the code. If the tool is deferred, load it first with ToolSearch `select:mcp__codegraph__codegraph_explore`.
+2. Use Grep and Glob in these conditions:
+   - The search text is not a symbol name.
+   - The file type is one that CodeGraph does not index, such as PowerShell, Markdown, JSON, and config files.
+   - The repo has no CodeGraph index.
+   - The `codegraph_explore` tool is missing.
+3. Before each Grep on a code file, ask: is the target a symbol name? If yes, call `codegraph_explore` first.
+4. A file name that is a class name is a symbol name. Call `codegraph_explore` for it, not `find`. Use Glob only to get the file names of a class, as item 5 says.
+5. To get the source of a class, never query the class name alone. A class-name query can return other symbols and no file of the class. Do these steps:
+   1. When the source is already in context, do not search.
+   2. When the file names are not in context, get them with Glob `**/<ClassName>*`. Start the file-name part with the class name, not with a wildcard. This finds files of all types, such as `.cs`, `.ts`, and `.tsx`. When the repo uses kebab-case file names, such as `order-service.ts`, use the name with hyphens.
+   3. Call `codegraph_explore` with all the file names in one query, such as `OrderService.cs OrderService.Init.cs`.
+   4. If the result has no file whose name matches the class, the query was wrong. Do not read the result. Go back to step 2.
+6. When a hook blocks a search, do what the hook says before any other search. Do not repeat the search with another tool.
+7. A Read of a file that you already know is not a search. The code-search rules do not apply to it.
+
+Why: CodeGraph returns a symbol and its callers in one call. Grep returns many lines that you must read, and these lines use more tokens.
+
 ## Code style
 
 These apply whenever you write or edit code.

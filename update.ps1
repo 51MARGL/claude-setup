@@ -3,11 +3,13 @@
 param(
     [int]$CheckIntervalMinutes = 60,
     [int]$FetchTimeoutSeconds = 30,
-    [int]$InstallTimeoutSeconds = 120
+    [int]$InstallTimeoutSeconds = 120,
+    [int]$CodeGraphInstallTimeoutSeconds = 180
 )
 
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $false
+$runStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
 $repoRoot = $PSScriptRoot
 $stateRoot = Join-Path $env:USERPROFILE '.claude\team-setup'
@@ -15,6 +17,12 @@ $logPath = Join-Path $stateRoot 'update.log'
 $lastCheckPath = Join-Path $stateRoot 'update-last-check.txt'
 $lastStopPath = Join-Path $stateRoot 'update-last-stop.json'
 $stopMessageRepeatHours = 24
+$codeGraphInstallTryPath = Join-Path $stateRoot 'codegraph-install-last-try.txt'
+$codeGraphLockPath = Join-Path $stateRoot 'codegraph-install.lock'
+$codeGraphPackage = '@colbymchenry/codegraph'
+$hookTimeoutSeconds = 400
+$codeGraphInstallMarginSeconds = 30
+$npmQueryTimeoutSeconds = 30
 $lockPath = Join-Path $stateRoot 'update.lock'
 $installStatePath = Join-Path $stateRoot 'install-state.json'
 $localGitTimeoutSeconds = 10
@@ -35,6 +43,8 @@ $sensitivePaths = @(
     'mcp/servers.json',
     'claude-home/hooks/main-session-rules.ps1',
     'claude-home/hooks/notify.ps1',
+    'claude-home/hooks/codegraph-init.ps1',
+    'claude-home/hooks/codegraph-search-guard.ps1',
     'claude-home/statusline.ps1',
     'claude-home/skills/strategic-compact/suggest-compact.ps1',
     'claude-home/commands/orchestrate.md',
@@ -89,12 +99,18 @@ function Invoke-ProcessWithTimeout {
         [string[]]$ArgumentList,
         [string]$WorkingDirectory,
         [int]$TimeoutSeconds,
-        [hashtable]$Environment = @{}
+        [hashtable]$Environment = @{},
+        [string[]]$RemoveEnvironmentPatterns = @()
     )
 
     $startInfo = [System.Diagnostics.ProcessStartInfo]::new($FilePath)
     foreach ($argument in $ArgumentList) { $startInfo.ArgumentList.Add($argument) }
     if ($WorkingDirectory) { $startInfo.WorkingDirectory = $WorkingDirectory }
+    foreach ($pattern in $RemoveEnvironmentPatterns) {
+        foreach ($variableName in @($startInfo.Environment.Keys)) {
+            if ($variableName -like $pattern) { [void]$startInfo.Environment.Remove($variableName) }
+        }
+    }
     foreach ($variableName in $Environment.Keys) { $startInfo.Environment[$variableName] = $Environment[$variableName] }
     $startInfo.UseShellExecute = $false
     $startInfo.CreateNoWindow = $true
@@ -194,6 +210,125 @@ function Set-StopMessage {
         Move-Item -LiteralPath $temporaryPath -Destination $lastStopPath -Force
     } catch {
         Write-UpdateLog 'WARN' "Cannot write $lastStopPath. $($_.Exception.Message)"
+    }
+}
+
+function Test-CodeGraphTryAllowed {
+    try {
+        $triedText = Get-Content -LiteralPath $codeGraphInstallTryPath -Raw -ErrorAction Stop
+        $triedUtc = [DateTimeOffset]::Parse($triedText.Trim(), [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind)
+    } catch {
+        return $true
+    }
+    $now = [DateTimeOffset]::UtcNow
+    return -not ($triedUtc -gt $now.AddHours(-$stopMessageRepeatHours) -and $triedUtc -le $now.AddMinutes(5))
+}
+
+function Set-CodeGraphTryRecord {
+    $temporaryPath = $codeGraphInstallTryPath + '.tmp'
+    Set-Content -LiteralPath $temporaryPath -Value ([DateTimeOffset]::UtcNow.ToString('o')) -Encoding utf8NoBOM
+    Move-Item -LiteralPath $temporaryPath -Destination $codeGraphInstallTryPath -Force
+}
+
+function Get-InstalledCodeGraphVersion {
+    param([string]$PackageJsonPath)
+
+    try {
+        $version = [string](Get-Content -LiteralPath $PackageJsonPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop).version
+    } catch {
+        return $null
+    }
+    if ([string]::IsNullOrWhiteSpace($version)) { return $null }
+    return $version
+}
+
+function Install-CodeGraph {
+    try {
+        $savedState = Get-Content -LiteralPath $installStatePath -Raw -ErrorAction Stop | ConvertFrom-Json -AsHashtable
+    } catch {
+        return $null
+    }
+    if ($savedState['switches']['SkipMcp']) { return $null }
+
+    if (Get-Command codegraph -CommandType Application -ErrorAction SilentlyContinue) {
+        Remove-Item -LiteralPath $codeGraphInstallTryPath -Force -ErrorAction SilentlyContinue
+        return $null
+    }
+    if (-not (Test-CodeGraphTryAllowed)) { return $null }
+
+    try {
+        $codeGraphLock = [System.IO.File]::Open($codeGraphLockPath, 'OpenOrCreate', 'ReadWrite', 'None')
+    } catch [System.IO.IOException] {
+        Write-UpdateLog 'INFO' 'Another CodeGraph install runs.'
+        return $null
+    }
+
+    try {
+        if (-not (Test-CodeGraphTryAllowed)) { return $null }
+
+        $npmCommand = Get-Command npm.cmd -CommandType Application -ErrorAction SilentlyContinue
+        if (-not $npmCommand) {
+            Set-CodeGraphTryRecord
+            return "CodeGraph is not installed, so the codegraph MCP server and the repo index do not work. Run: npm i -g $codeGraphPackage@latest. Install Node.js 18 or later first if npm is missing. Then restart Claude Code."
+        }
+
+        $manualInstallMessage = "CodeGraph failed to install. Run: npm i -g $codeGraphPackage@latest. Then restart Claude Code. See $logPath."
+        $secretEnvironmentPatterns = @('ANTHROPIC_*', 'CLAUDE_CODE_*')
+
+        try {
+            $prefixQuery = Invoke-ProcessWithTimeout -FilePath $npmCommand.Source -ArgumentList @('prefix', '-g') -WorkingDirectory $stateRoot -TimeoutSeconds $npmQueryTimeoutSeconds -RemoveEnvironmentPatterns $secretEnvironmentPatterns
+        } catch {
+            Set-CodeGraphTryRecord
+            Write-UpdateLog 'WARN' "npm prefix -g failed to start: $($_.Exception.Message)"
+            return $manualInstallMessage
+        }
+        $npmPrefix = $prefixQuery.Output.Trim()
+        if ($prefixQuery.TimedOut -or $prefixQuery.ExitCode -ne 0 -or -not $npmPrefix) {
+            Set-CodeGraphTryRecord
+            Write-UpdateLog 'WARN' "npm prefix -g failed: $(Get-FailureText $prefixQuery)"
+            return $manualInstallMessage
+        }
+
+        $codeGraphCommandPath = Join-Path $npmPrefix 'codegraph.cmd'
+        $packageJsonPath = Join-Path $npmPrefix "node_modules\$codeGraphPackage\package.json"
+        if (Test-Path -LiteralPath $codeGraphCommandPath) {
+            if (Get-InstalledCodeGraphVersion $packageJsonPath) {
+                Set-CodeGraphTryRecord
+                Write-UpdateLog 'INFO' "codegraph is in $npmPrefix but not on PATH."
+                return $null
+            }
+            Write-UpdateLog 'INFO' "$codeGraphCommandPath exists but the install of $codeGraphPackage is incomplete. The update installs it again."
+        }
+
+        if ($runStopwatch.Elapsed.TotalSeconds + $CodeGraphInstallTimeoutSeconds + $codeGraphInstallMarginSeconds -gt $hookTimeoutSeconds) {
+            Write-UpdateLog 'INFO' 'The CodeGraph install is deferred to the next session. This run has too little time left.'
+            return $null
+        }
+
+        # The try record comes before npm so that a killed hook does not repeat the install at each session start.
+        Set-CodeGraphTryRecord
+        $npmInstall = Invoke-ProcessWithTimeout -FilePath $npmCommand.Source -ArgumentList @('i', '-g', "$codeGraphPackage@latest") -WorkingDirectory $stateRoot -TimeoutSeconds $CodeGraphInstallTimeoutSeconds -RemoveEnvironmentPatterns $secretEnvironmentPatterns -Environment @{
+            npm_config_update_notifier = 'false'
+            npm_config_fund            = 'false'
+            npm_config_audit           = 'false'
+        }
+        Write-UpdateLog 'INFO' "npm install output:`n$($npmInstall.Output.Trim())`n$($npmInstall.ErrorOutput.Trim())"
+        if ($npmInstall.TimedOut -or $npmInstall.ExitCode -ne 0) {
+            Write-UpdateLog 'ERROR' "npm failed to install ${codeGraphPackage}: $(Get-FailureText $npmInstall)"
+            return $manualInstallMessage
+        }
+
+        $installedVersion = Get-InstalledCodeGraphVersion $packageJsonPath
+        if (-not (Test-Path -LiteralPath $codeGraphCommandPath) -or -not $installedVersion) {
+            Write-UpdateLog 'ERROR' "npm exited with code 0 but the install of $codeGraphPackage is incomplete. Expected $codeGraphCommandPath and a version in $packageJsonPath."
+            return $manualInstallMessage
+        }
+
+        Write-UpdateLog 'INFO' "Installed CodeGraph $installedVersion."
+        $versionSuffix = if ($installedVersion -cmatch '^[0-9]+\.[0-9]+\.[0-9]+[-+.0-9A-Za-z]*\z') { " $installedVersion" } else { '' }
+        return "The update installed CodeGraph$versionSuffix. Restart Claude Code to use the codegraph MCP server and the repo index."
+    } finally {
+        $codeGraphLock.Dispose()
     }
 }
 
@@ -387,6 +522,15 @@ try {
 } catch {
     Write-UpdateLog 'ERROR' "$($_.Exception.Message) $($_.ScriptStackTrace)"
     $updateMessage = "Team Claude setup auto-update failed. See $logPath."
+}
+
+try {
+    $codeGraphMessage = Install-CodeGraph
+    if ($codeGraphMessage) {
+        $updateMessage = if ($updateMessage) { "$updateMessage $codeGraphMessage" } else { $codeGraphMessage }
+    }
+} catch {
+    Write-UpdateLog 'WARN' "CodeGraph install check failed: $($_.Exception.Message)"
 }
 
 if ($updateMessage) {

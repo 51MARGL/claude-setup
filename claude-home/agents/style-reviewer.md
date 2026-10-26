@@ -1,7 +1,7 @@
 ---
 name: style-reviewer
 description: Use to review changed code against the repository's own rules (.editorconfig, CLAUDE.md, lint configs, analyzers) before a commit or a pull request. Checks style and conventions ONLY — does not hunt for bugs (use code-reviewer). Triggers on style review, conventions, editorconfig, lint, naming, pre-commit style check. Reports findings only — never edits files.
-tools: Read, Grep, Glob, PowerShell, Bash
+tools: Read, Grep, Glob, PowerShell, Bash, mcp__codegraph__codegraph_explore
 model: haiku
 ---
 
