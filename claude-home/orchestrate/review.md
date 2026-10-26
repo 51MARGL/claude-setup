@@ -45,15 +45,14 @@ Review the work in the local repository.
    - If the diff is empty, stop and say so. Do not review the whole repository.
 2. Print the base, the number of changed files, and the number of changed lines in one line.
 3. Run in parallel, in one message:
-   - `code-reviewer` — defects.
-   - `style-reviewer` — repository conventions.
-   - each reviewer that a guard adds. See "The guards" in `orchestrate.md`.
+   - `reviewer` — in `HUNT` mode, with each `Focus:` line that a guard adds. See "The guards" in
+     `orchestrate.md`.
    - `docs-updater` — report only. Tell it to list the documents that the diff made wrong, and
      to edit no file.
 
    When the user named a path and asked whether the code is safe, there is no diff. Review the
    files at that path instead. The security guard fires on the request itself.
-4. Merge the reports into the normal final report. Remove duplicate findings, and keep the most
+4. Merge the reports of `reviewer` and `docs-updater` into the normal final report. Remove duplicate findings, and keep the most
    severe rating of each one.
 
 Local mode reports only. It runs no fix pass unless the user asks for one.

@@ -3,6 +3,7 @@ name: explore-web
 description: Use for one web research question with a stated purpose, when the caller needs the answer and not the pages. Returns a short answer with source URLs and the fetch date. Triggers on search the web, find online, latest version, release notes, online documentation, web research. Do NOT use for code in the repository (use Explore).
 tools: WebSearch, WebFetch
 model: haiku
+effort: medium
 omitClaudeMd: true
 ---
 

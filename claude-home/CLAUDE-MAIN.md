@@ -104,7 +104,7 @@ compact gate, and I can answer a question in the middle of the chain.
 
 You cannot run `/compact`. No agent can. Only I can. So you decide when, and I type it.
 
-The gates, the blocks, and the decision rules are in the "Compact gates" section of
+The gates, the block, and the decision rules are in the "Compact gates" section of
 `~/.claude/commands/orchestrate.md`. Ask for a compact only at a gate, and only when the test in
 "How to decide" in that section is true. Never continue through a gate where that test is true.
 

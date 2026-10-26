@@ -3,8 +3,10 @@
 The task begins with a comma-separated agent list, then the description. Run them in that order.
 
 ```
-/orchestrate custom "Explore,dotnet-developer,code-reviewer" fix the retry loop in the client
+/orchestrate custom "Explore,dotnet-developer,reviewer" fix the retry loop in the client
 ```
+
+When the list names `planner`, add the plan-confirm stop after it, marked `(added)`.
 
 When the list names an implementer, add the five shared steps that the list does not name:
 

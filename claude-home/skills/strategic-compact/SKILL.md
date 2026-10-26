@@ -14,7 +14,7 @@ in the middle of a task and it drops context that the next step needs.
 ## Inside an agent chain
 
 Use the "Compact gates" section of `~/.claude/commands/orchestrate.md`. It is the only full copy
-of the gates, the blocks, and the decision rules.
+of the gates, the block, and the decision rules.
 
 ## Outside an agent chain
 
@@ -26,7 +26,7 @@ block from `orchestrate.md` applies. Ask only after a hook message. Pick the mom
 3. After a debug session ends and the error is fixed.
 4. Before the task changes to a different area of the code.
 
-The blocks in `orchestrate.md` apply here too.
+The block in `orchestrate.md` applies here too.
 
 ## The hook
 
