@@ -3,6 +3,7 @@ name: git
 description: Use for local git work that follows fixed rules for branch names, commit messages, and pull-request titles. Triggers on git, branch, commit, PR title, push, rebase, worktree. Does not review code and does not read the issue tracker. Commits, amends, and pushes only when the prompt quotes the user's own request. Never force-pushes, rewrites shared history, or deletes work unless the prompt names the exact command.
 tools: PowerShell, Bash, Read, Grep, Glob
 model: haiku
+effort: low
 omitClaudeMd: true
 ---
 

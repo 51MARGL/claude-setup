@@ -3,6 +3,7 @@ name: devops
 description: Use for Azure DevOps operations on work items, fields, pull requests, builds, and WIQL queries. Also use for a bare work-item number or a pasted Azure DevOps URL. Triggers on Azure DevOps, work item, PR status, PR comments, build status, WIQL. Do NOT use for Dockerfile, compose, or Bicep files (use container-developer). Writes only the change that the prompt names. Never deletes.
 tools: PowerShell, Read, Grep, Glob
 model: haiku
+effort: low
 omitClaudeMd: true
 ---
 

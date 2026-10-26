@@ -16,7 +16,8 @@ uses the `architect` and `Explore` output.
 
 The check fires when the diff changes one of these:
 
-- (a) a project that 2 or more other projects reference
+- (a) a public member of a project that 2 or more other projects reference. A private change in
+  such a project does not fire it.
 - (b) a build or package file:
   - `Directory.Build.props`
   - `Directory.Packages.props`
@@ -34,7 +35,7 @@ The check fires when the diff changes one of these:
   - a database schema
 - (e) shared test code
 
-Print `full suite: <criterion>` or `relevant tests: no criterion fired` in the step line of the final
+Print `full suite: <criterion>` or `relevant tests: no criterion fired` in the step block of the final
 suite run.
 
 This section is the only copy of the criteria. `tester.md` and `README.md` point here.
@@ -46,17 +47,22 @@ step ran.
 
 Run it after an implementer, before the review step that follows.
 
-1. Give it the files changed, the behaviours that the implementer report lists, and the test plan
-   from `planner` when one exists.
+1. Give it the files changed, the behaviours that the implementer report lists, and the path of
+   `plan-test.md` when `planner` made one.
 2. Tell it to edit test files only.
-3. Tell it to run the new tests and the tests that cover the change. It never runs the full suite.
-   Tell it to use a test filter and minimal output. See `tester`, "Keep test output small".
-4. Put its counts (passed, failed, skipped) in the step line.
-5. If a test fails because of production code, send the failure to the implementer, then run the
-   test step again. See [The fix pass](#the-fix-pass) for the count.
+3. Tell it to look for an existing test of each behaviour first, and to extend that test. Tell it
+   to write one test for each behaviour in the list.
+4. Tell it to run the new tests and the tests that cover the change. It never runs the full suite.
+   Tell it to use a test filter and quiet switches. See `tester`, "Keep test output small".
+5. Put its counts (passed, failed, skipped) in the step block.
+6. If a test fails because of production code, send the failure to the implementer, then run the
+   test step again. See [After each fix pass](#after-each-fix-pass).
 
 If `planner` or `tester` reported that the repository has no tests, skip each later test step and
 the final suite run. Say so in one line, and name the build as the only check in the final report.
+
+If the diff changes only Markdown files, skip the test step, the browser check step, and the final
+suite run. Print one line that says so. Run them when a test reads a changed Markdown file.
 
 Why: the implementers do not write or run tests. Without this step, nothing in the chain runs
 them.
@@ -87,14 +93,14 @@ Decide from the diff, not from the plan.
    - the scratchpad path for screenshots
    - the dev-server script of the repository
 2. Tell it to edit no file.
-3. Put the result of each acceptance criterion in the step line.
+3. Put the result of each acceptance criterion in the step block.
 4. If a check fails because of production code, send the failure to the implementer. Then run the
-   test step again. Then run the browser check step again. See [The fix pass](#the-fix-pass) for
-   the count.
+   test step again. Then run the browser check step again. See
+   [After each fix pass](#after-each-fix-pass).
 5. If `tester` reports `SKIPPED: login needed`, offer the user a check in their own browser with
    Claude in Chrome.
 
-When a condition is false, skip the step. Say so in the step line.
+When a condition is false, skip the step. Say so in the step block.
 
 Why: a unit test cannot show that a page renders and that the console has no error.
 
@@ -108,9 +114,12 @@ A finding is **blocking** when it is one of these:
 
 Fix every blocking finding before the commit. Every other finding is non-blocking. Mark each finding `blocking` or `non-blocking`.
 
-One fix pass is one fix-and-re-run of one stage. Count each stage on its own: the test step, the
-browser check step, the review step, and the final suite run. A stage that needs a second fix pass
-is not converging, so stop the chain.
+One fix pass is one fix-and-re-run of one stage. The stages are the test step, the browser check
+step, the review step, and the final suite run.
+
+Read the findings from `<scratchpad>\orchestrate\findings.md`, not from the context. Each handoff to
+an implementer or `tester` in a fix pass names the path of `findings.md`, the round, and the finding
+rows that the agent must fix. See "Before you ask about findings" in `orchestrate.md`.
 
 A review step can return two kinds of findings. Route each finding to its owner:
 
@@ -119,21 +128,48 @@ A review step can return two kinds of findings. Route each finding to its owner:
 
 Run the implementer first when both have findings. After the implementer changed code, run the test
 step again, with only the relevant tests: the failed tests, the new tests, and the tests that cover
-the fixed code. Tell `tester` to use a test filter and minimal output. See `tester`, "Keep test output
+the fixed code. Tell `tester` to use a test filter and quiet switches. See `tester`, "Keep test output
 small". Never run the full suite in a fix pass. Also run the browser check step again when
 that step ran before.
 
-When `security-reviewer` or `migration-reviewer` returned a blocking finding, run that reviewer
-again after the fix pass. Tell it to confirm that each blocking finding is closed, and that the fix
-opened nothing new.
+When the review step returned a blocking finding, run `reviewer` again in `VERIFY` mode on the fix
+diff. Give it the path of `findings.md`, the round, and the rows of the blocking findings. It
+confirms that each one is closed and that the fix opened nothing new. Update the status of each
+finding in `findings.md`.
 
-Skip the fix pass when the review step returned no blocking finding. Say so in the step line. Put
-each non-blocking finding in the "Non-blocking findings" section of the final report.
+Skip the fix pass when the review step returned no blocking finding. Say so in the step block. The
+final report takes each non-blocking finding from `findings.md`.
+
+### After each fix pass
+
+After the fix pass, its re-test, and its `VERIFY` run, check these conditions:
+
+- A blocking finding is still open.
+- The `VERIFY` run found a new blocking finding.
+- A test still fails because of production code.
+- The browser check step fails again.
+- In `refactor`, the test counts do not match the baseline. This applies to the covering-test
+  counts of the test step. It applies to the full-suite counts of the final suite run only when the
+  baseline step of `refactor` recorded a full-suite baseline. Each set has its own baseline from the
+  baseline step of `refactor`.
+
+After the final suite run, the `HUNT` pass on the new diff takes the place of the `VERIFY` run.
+
+When one condition is true, do these steps in order:
+
+1. Write the new round to `findings.md`. See "Before you ask about findings" in `orchestrate.md`.
+2. Print the findings table.
+3. Ask the user with AskUserQuestion: run another fix pass, or stop the chain. Put the open
+   findings into the question. See "Put the items into the question" in `CLAUDE-MAIN.md`.
+
+Never start another fix pass without the answer of the user. The number of fix passes has no
+limit. When the user chooses to stop, stop the chain. See "Stop rules" in `orchestrate.md`.
 
 ## The final suite run — `tester`
 
 Run it at most once, at the end of the chain. Run it after the review step, the fix pass, and the docs
-step, and before the commit step. It runs also when no fix pass ran.
+step, and before the commit step. It runs also when no fix pass ran. It does not run when the diff
+changes only Markdown files. See [The test step](#the-test-step--tester).
 
 1. Decide by [The system-wide impact check](#the-system-wide-impact-check). Use the first case that
    fits:
@@ -148,14 +184,14 @@ step, and before the commit step. It runs also when no fix pass ran.
    In the `test` workflow, the `tester` step 2 and the fix pass count as test steps, and a test file
    counts as code.
 2. Tell it to edit no file.
-3. Put its counts (passed, failed, skipped) in the step line.
+3. Put its counts (passed, failed, skipped) in the step block.
 4. If the suite fails because of production code, do these steps in order:
    - Send the failure to the implementer.
    - Run the test step on the failed tests.
-   - Run one `code-reviewer` pass on the new diff only.
+   - Run one `reviewer` pass in `HUNT` mode on the new diff only.
    - Run the final suite run again.
 
-   See [The fix pass](#the-fix-pass) for the count.
+   See [After each fix pass](#after-each-fix-pass).
 5. In the `test` workflow, a failure caused by production code stops the chain. Print the failure,
    and offer the `bugfix` workflow.
 
@@ -171,7 +207,7 @@ Run it before the first implementer.
 
 1. Run `git branch --show-current` yourself. Compare it with the default branch from
    `git symbolic-ref --short refs/remotes/origin/HEAD`.
-2. If the current branch is a work branch, skip the agent. Print the branch name in the step line.
+2. If the current branch is a work branch, skip the agent. Print the branch name in the step block.
 3. If the current branch is the default branch, send `git`. Tell it to create a work branch and
    switch to it.
    - Give it the work-item number and title when step 0 resolved one.

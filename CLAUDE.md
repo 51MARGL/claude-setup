@@ -121,8 +121,9 @@ the installed copy. The next automatic update overwrites an edited installed fil
     absent or names `.cs`, `.ts`, `.tsx`, `.js`, or `.jsx`; or the call is a file-name search (the
     Glob tool, `find`, or a listing with `Get-ChildItem`, `gci`, `dir`, or `ls`) and the name
     pattern has no extension, or names a code extension; the resolved search path is inside an index
-    (the hook walks up from each path to the nearest `.codegraph\codegraph.db`, and stops at a folder
-    with `.git` and no db; a path outside every index is allowed; a UNC path never reaches the disk);
+    (the hook walks up from each path to the nearest `.codegraph\codegraph.db` whose index holds at
+    least 1 file, and stops at a folder with `.git` and no db; a path outside every index is allowed;
+    a UNC path never reaches the disk; see "Index check" below);
     `codegraph.cmd` is on `PATH`; `agent_type`
     is not `git`, `devops`, `pr-reviewer`, `claude-code-guide`, or `statusline-setup`; and the gate of
     this session and agent is closed, or the search is a blocked symbol search (see below).
@@ -138,6 +139,18 @@ the installed copy. The next automatic update overwrites an edited installed fil
       parts is a code search.
     - `git ls-files <pathspec>` is a file-name search when the last path part has a wildcard or a
       dot. A bare folder is allowed. A `:` pathspec is not a name pattern.
+  - Index check: a folder with `.codegraph\codegraph.db` counts as an index only when
+    `codegraph status --json <root>` reports `fileCount` above 0. An index with 0 files counts as no
+    index, and the walk continues up. A repo whose files CodeGraph does not index (such as this
+    repo: `.ps1`, `.md`, `.json`) gets no gate. The hook runs the status call at each check that
+    reaches an index. It keeps no cache on disk, and one hook run checks each root once. The call
+    has a timeout of 6 s, and runs in `%USERPROFILE%\.claude\team-setup`. A status failure, a
+    timeout, or bad JSON counts as no index, so the search runs. The hook skips the call, and the
+    search runs, when the root path has one of `& | < > ^ % ! ( ) , ; =`, whitespace, or `"`,
+    because `codegraph.cmd` runs through `cmd.exe`, which parses these characters in an unquoted
+    argument. One stopwatch covers the hook run, with a budget of 8500 ms. The hook starts a status
+    call only when the call can finish inside the budget, so only the first index in one run gets
+    checked. A later index counts as no index.
   - `sed` rule: a `sed` segment is a search only when its script has a regex address, such as
     `/pattern/p` or `/a/,/b/p`. The pattern is the regex in the first address. `sed` with only
     line-number addresses (`sed -n '10,40p' file`), with `-i` or `--in-place`, or with `-f` is
@@ -151,15 +164,15 @@ the installed copy. The next automatic update overwrites an edited installed fil
     open, the hook denies a symbol search, with two exceptions:
     - (a) Each symbol name was in an earlier symbol deny of this gate key, and a `codegraph_explore`
       call ran after that deny. A symbol that CodeGraph cannot find can be searched after one try.
-    - (b) 3 symbol denies ran with no `codegraph_explore` call between them. The next symbol search runs.
-    A symbol search with a closed gate follows the normal closed-gate rule (3-deny escape). The deny
+    - (b) 1 symbol deny ran with no `codegraph_explore` call after it. The next symbol search runs.
+    A symbol search with a closed gate follows the normal closed-gate rule (the 1-deny rule). The deny
     also records the names, so exception (a) applies after the next `codegraph_explore` call.
   - `post`: a `PostToolUse` hook (matcher `mcp__codegraph__codegraph_explore`, timeout 10) in the
     same array as the `Agent|Task` strategic-compact hook. It writes the `.open` marker, also when
     CodeGraph returns an error text. It also moves the names from `.symbols-denied` to
     `.symbols-explored`, and deletes `.symbols-denied` and `.symbol-denies`.
   - The gate key is `<session_id>-<agent_id|main>`. The gate opens after one `codegraph_explore` call
-    or after 3 denies. After the gate opens, only a plain-text search runs freely. The state is in
+    or after 1 deny. After the gate opens, only a plain-text search runs freely. The state is in
     `%USERPROFILE%\.claude\team-setup\codegraph-search-guard\` (`.open`, `.denies`, `.symbol-denies`,
     `.symbols-denied`, `.symbols-explored`). The deny path deletes files older than 7 days, also
     these new files. The log is
@@ -170,7 +183,7 @@ the installed copy. The next automatic update overwrites an edited installed fil
     names the blocked symbols in the deny reason.
   - Accepted cost: the rule in "Send code questions and searches to Explore" tells a subagent not to
     call `codegraph_explore` only to open the gate. In a subagent, a closed gate can still deny the
-    first inline Grep or Glob code search, up to 3 times.
+    first inline Grep or Glob code search once.
   - File-name search rules: `find` counts its `-name`, `-iname`, `-path`, `-ipath`, `-wholename`, and
     `-iwholename` values. It counts `-path` only with a wildcard, and `-regex` only with a code
     extension. A listing counts its `-Filter`, `-Include`, and wildcard values, and only with
@@ -190,8 +203,9 @@ the installed copy. The next automatic update overwrites an edited installed fil
     as `.*\.(cs|ts)`, is allowed. `awk` and `perl` are not matched. The symbol test is a heuristic
     for the shape of a name, so a symbol in a pattern with regex syntax is not found, and a
     camelCase word that is not a symbol is blocked. The deny count is not atomic. Each Grep, Glob, Bash, and PowerShell
-    call starts `pwsh` once (about 1 s), also for a command that is not a search. The hook has no
-    opt-out.
+    call starts `pwsh` once (about 1 s), also for a command that is not a search. A search that
+    reaches an index costs about 2 s more, because the status call starts node. A repo path with a
+    space or one of the characters in "Index check" gets no guard. The hook has no opt-out.
 - **Placeholders**: the installer replaces `{{CLAUDE_HOME}}` and `{{TEAM_SETUP_REPO}}` with real
   paths. Use them in every path in `settings.json`. The exception: a permission rule path uses `~/`
   (home-relative) and not a placeholder.
@@ -213,14 +227,14 @@ the installed copy. The next automatic update overwrites an edited installed fil
   workflow. The folder is not under `commands\`, because each file there is a slash command.
 
 `update.ps1` names a file in its message when a new commit changes it (`$sensitivePaths`). The list
-has 42 paths in 3 groups:
+has 40 paths in 3 groups:
 
 1. The files that run code: `install.ps1`, `update.ps1`, `claude-home/hooks/main-session-rules.ps1`,
    `claude-home/hooks/notify.ps1`, `claude-home/hooks/codegraph-init.ps1`, `claude-home/hooks/codegraph-search-guard.ps1`,
    `claude-home/statusline.ps1`,
    and `claude-home/skills/strategic-compact/suggest-compact.ps1`.
 2. The files that set permissions, hooks, tools, or the model: `claude-home/settings.json`,
-   `mcp/servers.json`, and the 17 agent files `claude-home/agents/<name>.md`.
+   `mcp/servers.json`, and the 15 agent files `claude-home/agents/<name>.md`.
 3. The rules that the main session loads or follows: `claude-home/CLAUDE-TEAM.md`,
    `claude-home/CLAUDE-MAIN.md`, `claude-home/STE.md`, `claude-home/commands/orchestrate.md`, the 8
    files `claude-home/orchestrate/<name>.md`, `claude-home/output-styles/audhd.md`,
@@ -233,16 +247,18 @@ When you add a `.ps1` file, an agent file, or a rules file to `claude-home\`, ad
 
 Several files hold the same fact. When you change one, change the others in the same commit.
 
-1. **Agent models**: the `model:` line of each agent file, the "Model policy" table in
-   `claude-home\commands\orchestrate.md`, the table in `claude-home\agents\pr-reviewer.md`, and the
-   `claude-home\agents\` row of the "Contents" table in `README.md`.
-2. **The security guard and the migration guard**: `orchestrate.md` ("The guards") and
-   `pr-reviewer.md` hold the same conditions. Keep the two texts identical.
+1. **Agent models and effort**: the `model:` and `effort:` lines of each agent file, the Model and
+   Effort columns of the "Model policy" table in `claude-home\commands\orchestrate.md`, the table in
+   `claude-home\agents\pr-reviewer.md`, and the `claude-home\agents\` row of the "Contents" table in
+   `README.md`.
+2. **The guards and the reviewer model**: a guard adds a `Focus:` line to the `reviewer` handoff.
+   `orchestrate.md` ("The guards" and "Reviewer model") and `pr-reviewer.md` hold the same text.
+   Keep the two texts identical.
 3. **The list of tasks that need no agent chain**: only in `claude-home\CLAUDE-MAIN.md`
    ("Orchestrate multi-step work yourself"). `orchestrate.md` points to it. Do not copy it.
 4. **Rules from `MISTAKES.md`**: the PowerShell alias ban, the line-endings rule, and the task-scope
    rule are in several agent files (`dotnet-developer`, `frontend-developer`,
-   `powershell-developer`, `container-developer`, `tester`, `docs-updater`).
+   `powershell-developer`, `container-developer`, `markdown-developer`, `tester`, `docs-updater`).
 5. **The workflow chains**: the workflow files in `claude-home\orchestrate\` and the "Use
    `/orchestrate`" table in `README.md`.
 6. **The compact threshold**: the percent in `README.md` (strategic-compact row),
@@ -253,18 +269,19 @@ Several files hold the same fact. When you change one, change the others in the 
    `dotnet-developer`, `frontend-developer`, `powershell-developer`, and `container-developer`. The
    "Keep the report brief" text is in the report section of every agent file.
 8. **The DTO doc-comment rule**: "Code style" item 6 in `claude-home\CLAUDE-TEAM.md`,
-   `dotnet-developer.md`, `frontend-developer.md`, and `style-reviewer.md`.
+   `dotnet-developer.md`, `frontend-developer.md`, and `reviewer.md`.
 9. **The test-run scopes**: `claude-home\orchestrate\shared-steps.md` (the test step, the fix pass,
    and the final suite run), `bugfix.md` (the `reproduce` scope) and `refactor.md` (the `baseline`
    scope) in the same folder, `tester.md`, and `README.md`. The system-wide impact criteria are
    only in `shared-steps.md` ("The system-wide impact check"). `tester.md` and `README.md` point
-   to it. Do not copy them.
+   to it. Do not copy them. The rule that skips the test step, the browser check step, and the
+   final suite run for a Markdown-only diff is in `shared-steps.md` and `README.md`.
 10. **The toast text** "Waiting for agents. Nothing needed from you now.": `orchestrate.md`,
     `README.md`, and `notify.ps1` (`$waitLine`).
 11. **The `CLAUDE.md` read step**: the text "The root `CLAUDE.md` of the working directory is already
     in your context" is in `architect`, `planner`, `dotnet-developer`, `frontend-developer`,
-    `powershell-developer`, `container-developer`, `tester`, `code-reviewer`, `style-reviewer`,
-    `security-reviewer`, and `migration-reviewer`. Keep the 11 texts the same.
+    `powershell-developer`, `container-developer`, `markdown-developer`, `tester`, and `reviewer`.
+    Keep the 9 texts the same.
 12. **The sensitive paths**: `$sensitivePaths` in `update.ps1`, the list in "How the installer treats
     each file" in this file, and the "Security" section of `README.md`. Keep the three lists the
     same.
@@ -274,11 +291,11 @@ Several files hold the same fact. When you change one, change the others in the 
     `claude-home\agents\explore.md`. Keep the same terms, the same list of file types, the ToolSearch
     step, the symbol check before a Grep, and the Read exception.
 15. **The agents with the CodeGraph tool**: the `tools:` line of `architect`, `planner`,
-    `code-reviewer`, `security-reviewer`, `migration-reviewer`, `style-reviewer`, `docs-updater`,
-    `tester`, and `explore` has `mcp__codegraph__codegraph_explore`. The 4 developer agents have all
+    `reviewer`, `docs-updater`, `tester`, and `explore` has `mcp__codegraph__codegraph_explore`. The 4 developer agents have all
     tools. `git`, `devops`, `pr-reviewer`, and `explore-web` do not get it. The `tools:` line of
-    `pr-reviewer` and of the 8 agents with the CodeGraph tool, except `explore`, has `Agent`. The
-    developer agents have it through all tools. The limit to the `Explore` agent is a prompt rule
+    `pr-reviewer` and of the 5 agents with the CodeGraph tool, except `explore`, has `Agent`. The
+    developer agents have it through all tools. `markdown-developer` lists `Agent` and does not
+    list the CodeGraph tool. The limit to the `Explore` agent is a prompt rule
     only, because Claude Code ignores `Agent(Explore)` in the `tools:` line of a subagent. Keep this
     list the same in `README.md` ("MCP servers").
 16. **The CodeGraph context line** ("This repo has a CodeGraph index. Call the `codegraph_explore`
@@ -291,6 +308,23 @@ Several files hold the same fact. When you change one, change the others in the 
     conditions, and the `sonnet` or `haiku` rule. The `Model policy` row of `orchestrate.md` has the
     `sonnet` rule too. The `codegraph_explore` conditions differ on purpose: the subagent text is
     wider (1 to 3 named symbols, 1 or 2 calls).
+18. **The output switches**: `dotnet-developer`, `frontend-developer`, `powershell-developer`, and
+    `tester` use the same switches for the same tool (`-v:minimal -nologo -clp:NoSummary`,
+    `--silent`, `tsc --pretty false`).
+19. **The self-check and the reviewer checklist**: "Self-check before you report" is identical in
+    the 4 developer files. Its items match "Never report" and the conventions checks in
+    `reviewer.md`. `markdown-developer` has its own self-check list for Markdown.
+20. **The plan sections**: the top-level headings in the "Plan format" of `planner.md` and the split
+    rule in "The plan-confirm stop" of `orchestrate.md`.
+21. **The compact gates and `findings.md`**: the gate letters A to D and `findings.md` are in
+    "Compact gates" and "Before you ask about findings" of `orchestrate.md`. `shared-steps.md` (the
+    fix pass, "After each fix pass"), `test.md` (only gate C and gate D apply), and the
+    "What /orchestrate does" text of `README.md` use them. Keep the gate letters, the single block,
+    and the rule that a fix pass has no limit the same.
+22. **The implementer list**: `dotnet-developer`, `frontend-developer`, `powershell-developer`,
+    `container-developer`, and `markdown-developer` are in `feature.md`, `planner.md`, `README.md`,
+    and the "implementer agents" row of the "Model policy" table in `orchestrate.md`. Keep the five
+    names the same.
 
 ## Writing rules for this repository
 

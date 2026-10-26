@@ -1,5 +1,5 @@
 ---
-description: Run a fixed chain of agents over one task — plan, implement, test, review, update the docs, commit. The chain has a handoff between each step and a step line after each step.
+description: Run a fixed chain of agents over one task — plan, implement, test, review, update the docs, commit. The chain has a handoff between each step, a step block after each step, and a plan-confirm stop before the code.
 argument-hint: <design|feature|bugfix|test|refactor|review|custom> <description | pull-request URL or number>
 ---
 
@@ -52,6 +52,14 @@ the code yourself. Each step is one agent invocation.
    file as a numbered list, with the model of each step.
 7. Start immediately. Do not ask for permission to begin, unless the workflow is `custom` and the
    agent list is missing.
+8. Create the file `<scratchpad>\orchestrate\state.md` with the Write tool. Use the scratchpad path
+   from the session environment. Overwrite an old file. Put these items in it:
+   - the workflow
+   - whether the workflow uses `shared-steps.md`
+   - the chain
+   - the step, as "0 of N"
+   - the task
+   - the work item, or "none"
 
 ### Routing table
 
@@ -79,17 +87,18 @@ agent.
 
 Pass `model` on every `Agent` call. Default to these, and say in one line when you deviate.
 
-| Step | Model | Why |
-|---|---|---|
-| `architect` | `opus` | Judgement. A wrong decision gives a wrong plan |
-| `planner` | `sonnet` when the task touches 1 project and fewer than 3 files, `opus` otherwise | A small task needs little judgement. Estimate the size from the task text and the `architect` report |
-| `pr-reviewer` (`review`, pull-request mode) | `sonnet` | The agent file holds the procedure. The reviewers that it starts do the judgement |
-| implementer agents, fix pass | `sonnet` | The plan already holds the decisions, so the step is execution, not judgement |
-| `tester` | `sonnet` | The test plan already names what to assert. Raise it to `opus` when its report says "Recommend `opus`", or when the tests must control concurrency or guard a published contract |
-| `code-reviewer`, `security-reviewer`, `migration-reviewer` | `sonnet` | The agent file holds the checks. Raise it to `opus` by the rules in "Reviewer model" |
-| `style-reviewer`, `devops`, `git`, `Explore`, `explore-web` | `haiku` | Rule matching, lookup, search, and flow summaries. The agent file holds the rules, so the step needs no judgement. Raise it to `sonnet` when the report misses a rule or a file that you can see. Raise `Explore` to `sonnet` for a flow over more than one project or more than about 5 steps |
-| `docs-updater` | `sonnet` | It decides which document the change made wrong, and it writes new text |
-| `general-purpose`, any other helper agent | `sonnet` | The task is open, so the agent file holds no rules for it |
+| Step | Model | Effort | Why |
+|---|---|---|---|
+| `architect` | `opus` | `medium` | Judgement. A wrong decision gives a wrong plan |
+| `planner` | `opus` | `medium` | Judgement. A wrong plan gives wrong code |
+| `pr-reviewer` (`review`, pull-request mode) | `sonnet` | `medium` | The agent file holds the procedure. The `reviewer` that it starts does the judgement |
+| implementer agents (`dotnet-developer`, `frontend-developer`, `powershell-developer`, `container-developer`, `markdown-developer`), fix pass | `sonnet` | `medium` | The plan already holds the decisions, so the step is execution, not judgement |
+| `tester` | `sonnet` | `medium` | The test plan already names what to assert. Raise it to `opus` when its report says "Recommend `opus`", or when the tests must control concurrency or guard a published contract |
+| `reviewer` | `sonnet` | `medium` | The agent file holds the checks. Raise it to `opus` by the rules in "Reviewer model" |
+| `devops`, `git` | `haiku` | `low` | Lookup and fixed rules. The agent file holds the rules, so the step needs no judgement. Raise it to `sonnet` when the report misses a rule or a file that you can see |
+| `Explore`, `explore-web` | `haiku` | `medium` | Search and flow summaries. Raise it to `sonnet` when the report misses a file that you can see. Raise `Explore` to `sonnet` for a flow over more than one project or more than about 5 steps |
+| `docs-updater` | `sonnet` | `medium` | It decides which document the change made wrong, and it writes new text |
+| `general-purpose`, any other helper agent | `sonnet` | none | The task is open, so the agent file holds no rules for it |
 
 The main session plans, decides, and resolves questions from the agents.
 
@@ -101,18 +110,41 @@ Raise any other step to `opus` when one of these is true:
 
 #### Reviewer model
 
-- All three reviewers go to `opus` when one of these is true:
-  - The diff is over about 300 lines or over 5 files.
-  - The diff touches a published contract.
-  - The task is cross-repository.
-  - The user says the change is risky.
-- `security-reviewer` also goes to `opus` when the diff changes authentication, authorization,
-  crypto, or secret storage, when the diff changes a hook, an installer, an update script, or an MCP
-  server entry, or when the task reports a vulnerability or a leaked secret.
-- `migration-reviewer` also goes to `opus` when the migration drops or renames a column or a table,
-  changes a column type, or moves data in a table that already holds data.
+`reviewer` goes to `opus` when one of these is true:
+
+- The diff is over about 300 lines or over 5 files.
+- The diff touches a published contract.
+- The task is cross-repository.
+- The user says the change is risky.
+- `Focus: security` is on, and the diff changes authentication, authorization, crypto, or secret
+  storage. Also when the diff changes a hook, an installer, an update script, or an MCP server entry,
+  or when the task reports a vulnerability or a leaked secret.
+- `Focus: migration` is on, and the migration drops or renames a column or a table, changes a column
+  type, or moves data in a table that already holds data.
 
 `orchestrate.md` and `pr-reviewer.md` hold the same text. Keep the two texts identical.
+
+#### Effort
+
+The Effort column in "Model policy" is the default. The frontmatter `effort` field of each agent
+file sets it. The `effort` parameter of the `Agent` call overrides the frontmatter value.
+
+A change is **small** when all of these are true:
+
+- It touches 1 project.
+- It touches 2 files or fewer.
+- The diff is about 100 lines or fewer.
+- No guard fired.
+- It touches no published contract.
+- No step is raised to `opus`.
+
+Before a diff exists, estimate the size from the task text and the plan.
+
+- For a small change, pass `effort: "low"` in the `Agent` call. Do this for the implementer,
+  `tester`, `reviewer`, `docs-updater`, and `Explore` with the breadth `quick`.
+- For any other change, pass no `effort`. The frontmatter value applies.
+- Never pass `low` to `architect`, to `planner`, or to a step raised to `opus`.
+- Never pass `high`, `xhigh`, or `max`.
 
 ## Workflows
 
@@ -134,19 +166,18 @@ system-wide impact check.
 
 ## The guards
 
-A guard adds a reviewer to the review step. Decide each guard from the diff after the test step,
-not from the plan. Why: the plan can miss a SQL file or a configuration change that the implementer
-added.
+A guard adds a `Focus:` line to the `reviewer` handoff. Decide each guard from the diff after the
+test step, not from the plan. Why: the plan can miss a SQL file or a configuration change that the
+implementer added.
 
-- **The security guard** adds `security-reviewer` when the diff touches input handling,
+- **The security guard** adds `Focus: security` when the diff touches input handling,
   authorization, data access, file paths, configuration, secrets, crypto, or an outbound call. It
   also fires when the task reports a vulnerability or a leaked secret, or asks whether code is safe,
-  or when an implementer report names `security-reviewer` as the next step.
-- **The migration guard** adds `migration-reviewer` when the diff contains a migration, a schema
-  change, or SQL. It also fires when an implementer report names `migration-reviewer` as the next
-  step.
+  or when an implementer report names `Focus: security`.
+- **The migration guard** adds `Focus: migration` when the diff contains a migration, a schema
+  change, or SQL. It also fires when an implementer report names `Focus: migration`.
 
-Print each guard that fired, and the reason in one clause, in the step line of the review step.
+Print each guard that fired, and the reason in one clause, in the step block of the review step.
 `pr-reviewer` holds the same two conditions. Keep the two texts identical when you change one.
 
 ## The handoff
@@ -171,7 +202,10 @@ Rules for the handoff:
 - Carry forward every constraint the previous agent detected, such as an analyzer ban or a
   convention.
 - Never carry forward a finding as a fact when the previous agent marked it a question.
-- Give a reviewer the diff base and the scope. Never paste the diff or the implementer summary.
+- Give `reviewer` the diff base, the scope, the mode (`HUNT` or `VERIFY`), and each `Focus:` line.
+  Never paste the diff or the implementer summary.
+- Name the plan file of the step by its path, such as `<scratchpad>\orchestrate\plan-implement.md`.
+  The agent reads it. Never paste the plan into the handoff.
 - Name the sibling that the new code must match. Tell the implementer to copy the sibling pattern,
   or to use a different pattern in both the new code and the sibling. Never allow a new pattern in
   the new code only. Why: a helper class that no sibling uses gives the code two ways to do one
@@ -187,12 +221,21 @@ unless the agent report names it as an aligned sibling. Send
 it back to the agent before the next step. Why: a later agent once restored a file outside its task,
 and the regression showed only in the next test run.
 
-Then print exactly two lines:
+Then print the step block. It has up to 8 lines:
 
 ```
-Step <n> of <total> done: <agent> — <one-line outcome>
-Next: <agent> — <one-line job>
+Step <n> of <N> done: <agent> — <outcome>
+Changed: <up to 5 paths, then +N more>
+Verified: <build result, test counts>
+Findings: <one line for each blocking finding: path:line — defect>
+Open: <questions or assumptions>
+Next: <agent> — <job>
 ```
+
+Omit an empty line, except the first line and `Next:`. Then update `state.md` with the Edit tool.
+Put these items in it: the step, the decisions, the files, the counts, the guards, and the open
+findings with `path:line`. `state.md` must hold every count, path, and caveat that the final report
+needs. Why: a compact can come before the final report, and the report must not come from memory.
 
 Then check the compact gates below. When no gate applies, run the next step. Do not print the agent's full report between steps.
 
@@ -205,6 +248,55 @@ Waiting for agents. Nothing needed from you now.
 
 Why: the toast hook `notify.ps1` matches this line and shows no "Claude: done" toast for that turn.
 
+## Before you ask about findings
+
+Write the findings file first: `<scratchpad>\orchestrate\findings.md`. Create it with the Write
+tool. Add to it with the Edit tool. Write its full path into `state.md`.
+
+Add one section for each review round, with the heading `Round <n>`. A round is one review step or
+one `VERIFY` run. Put these items in the section:
+
+1. The full table. Use one row for each finding. Use these columns:
+   - severity
+   - `path:line`
+   - defect
+   - trigger and what breaks
+   - owner
+   - fix
+2. For each finding, whether the main session checked it, and how.
+3. The answer of the user.
+4. The status of each finding: `open`, `fixed`, `verified`, or `skipped`.
+
+Write items 1 and 2, and the status `open`, before you print the table. Write item 3 and the new
+status when the user answers. After each fix pass and each `VERIFY` run, update the status of each
+finding.
+
+Then print the table in the chat, with the same rows. Then follow "Put the items into the question"
+in `CLAUDE-MAIN.md`. After the answer is in `findings.md`, check gate C.
+
+A review round with no blocking finding gets a section too. Write it before the docs step, and then
+check gate C.
+
+## The plan-confirm stop
+
+The stop comes after `planner` in `feature`, `bugfix`, and `refactor`. In `custom`, it comes after
+`planner` when the list names `planner`. The main session never builds a plan itself.
+
+1. Split the plan by its headings into these files in `<scratchpad>\orchestrate\`:
+   - `plan-implement.md` from `## For the implementer`
+   - `plan-test.md` from `## For tester`
+   - `plan-review.md` from `## For the reviewer`
+   - `plan-docs.md` from `## For docs-updater`
+2. Add the acceptance criteria from `## Summary` to each file. Skip a file when its section says
+   none.
+3. Write the plan file paths and the decisions into `state.md`.
+4. Print the full plan in the chat. When "How to decide" fires, print the three compact lines too.
+5. Stop and wait for "go" or a change. "continue" after a compact counts as "go".
+6. On a change, run `planner` again with the change. Write the files again. Then print the plan
+   again.
+
+Do not print the "Waiting for agents" line at this stop.
+
 ## Compact gates
 
 `/compact` clears the spent context and keeps a summary. Only the user can run it. You never run
@@ -215,30 +307,34 @@ This section is the only full copy of the compact rules. `CLAUDE-MAIN.md` and th
 
 Check for a compact gate after each step, before you start the next step.
 
-### The three gates
+### The four gates
 
 In time order:
 
-1. **Gate A — the design is done.** After the last design step, and before the first implementer
-   starts. The last design step is `planner` in `feature`, the reproduce step of `tester` in
-   `bugfix`, and the baseline step of `tester` in `refactor`. Never put the gate between
-   `architect` and `planner`, because the plan needs the design note.
-2. **Gate B — the code is done.** After the first test step that follows the implementer, and
-   after the browser check step when that step runs. Gate B comes before the first review step
-   starts. The reviewers read the diff from disk, not from the context. A fix pass, its re-test,
-   and a second review run never open gate B again.
-3. **Gate C — the task is done.** After the final report, and before a new task starts in the same
-   session.
+1. **Gate A — the design is done.** It is the plan-confirm stop. It comes after the last design
+   step, and before the first implementer starts. The last design step is `planner` in `feature`,
+   `bugfix`, and `refactor`. Never put the gate between `architect` and `planner`, because the plan
+   needs the design note.
+2. **Gate B — the code is done.** After each test step that follows an implementer step or a fix
+   pass, also the re-test of a fix pass. Also after the browser check step when that step runs.
+   Gate B comes before the next review step or `VERIFY` run starts. `reviewer` reads the diff from
+   disk, not from the context.
+3. **Gate C — the findings are written.** At each findings question, after the round is in
+   `findings.md`. The chain already stops there for the answer of the user. Also after a review
+   step or a `VERIFY` run with no blocking finding, before the docs step. The fix pass reads the
+   findings from `findings.md`, not from the context.
+4. **Gate D — the task is done.** After the commit step, and before the final report. The final
+   report comes from `state.md` and `findings.md`, not from the context.
 
-The `test` workflow has no design step and no implementer. Only gate C applies to it.
+Gate B and gate C come again in each fix pass.
 
-### The three blocks
+The `test` workflow has no design step and no implementer. Only gate C and gate D apply to it.
 
-Never ask for a compact at these points. The next step needs the context that a compact drops.
+### The block
 
-1. In the middle of one stage.
-2. Between a review step and its fix pass. The fix pass needs the findings in full.
-3. Before the final report. The report needs every path, number, and caveat from the chain.
+Never ask for a compact in the middle of one stage. This includes the time while a background agent
+still runs, and the time before its report is in `state.md`. Why: the next step needs the context
+that a compact drops.
 
 ### How to decide
 
@@ -258,27 +354,32 @@ you the size of this context. Use the hook message.
 Print these three lines, then stop and wait for the user.
 
 ```
-Compact gate <A|B|C>: <gate name> — <the reason in one clause>
+Compact gate <A|B|C|D>: <gate name> — <the reason in one clause>
 Run: /compact Keep: <the facts the next step needs, one line>
 Then say "continue". I resume at step <n> of <total>.
 ```
 
-The `Keep:` line is the focus text for `/compact`. Put the workflow name, whether the
+The `Keep:` line is the focus text for `/compact`. Put the full path of `state.md` first. Then put
+the full path of `findings.md` when it exists. Then put the workflow name, the step, whether the
 workflow uses `shared-steps.md`, the plan decisions, the file paths, the acceptance criteria, and
 the open findings in it. Leave out the search results and the file contents.
 
-When the user says "continue" after gate A or gate B, read these files again with the Read tool.
-Replace `~` with the `%USERPROFILE%` path.
+When the user says "continue" after gate A, gate B, or gate C, read these files again with the Read
+tool. Replace `~` with the `%USERPROFILE%` path.
 
 1. `~/.claude/commands/orchestrate.md`, this file.
 2. `~/.claude/orchestrate/<workflow>.md`, the file of the current workflow.
 3. `~/.claude/orchestrate/shared-steps.md`, when the table in "Workflows" says so.
+4. `<scratchpad>\orchestrate\state.md`.
+5. `<scratchpad>\orchestrate\findings.md`, when `state.md` names it.
 
-If a read fails, stop. Say so. Then restate the step line. Run the step. Why: a compact turns the
+If a read fails, stop. Say so. Then restate the step block. Run the step. Why: a compact turns the
 earlier reads into a summary, and a step must not run from memory.
 
-After gate C, skip the re-read. The next task starts at Step 0, which reads the files of its own
-workflow.
+When the user says "continue" after gate D, read `state.md` and `findings.md` again with the Read
+tool. Read `findings.md` only when `state.md` names it. Then print the final report. If a read
+fails, stop and say so. A new task in the same session starts at Step 0, which reads the files of
+its own workflow.
 
 ## Stop rules
 
@@ -286,22 +387,18 @@ Stop the chain and report, when:
 
 - An implementer reports the task is blocked.
 - A build or a test fails and the implementer could not fix it.
-- A stage needs a second fix pass. See "The fix pass" in `shared-steps.md`. A reviewer that returns a
-  blocking finding after the first fix pass means the chain is not converging.
+- The user chooses "stop the chain" at the question after a fix pass. See "After each fix pass" in
+  `shared-steps.md`. Never stop at that point without the answer of the user.
 - `tester` cannot reproduce the bug in the `bugfix` workflow. Do not fix a bug that no test or
   reproduction shows.
-- The test counts after a refactor do not match the baseline, and the fix pass already ran once.
-  This applies to the covering-test counts of the test step. It applies to the full-suite counts of
-  the final suite run only when the baseline step of `refactor` recorded a full-suite baseline.
-  Each set has its own baseline from the baseline step of `refactor`.
-- The browser check fails again after one fix pass.
 - The user interrupts.
 - `architect` returned two viable options with a real trade-off. The choice is the user's. Print
   the recommendation and the alternatives, and stop. Do not pick.
 - The fix needs a behaviour change for existing callers, and nobody asked for it. Describe the
   choice and stop.
 
-Say which step stopped it and why, in one line.
+Say which step stopped it and why, in one line. Then print the last step block. When findings
+caused the stop, print the findings table too.
 
 ## Final report
 
@@ -340,7 +437,9 @@ Committed: <commit hash | not committed — the user did not ask>
 Verdict: <COMMITTED | READY TO COMMIT | NEEDS WORK | BLOCKED>
 ```
 
-After the report, check gate C. End with one next action the user can do in under two minutes.
+Check gate D before the report. Build the report from `state.md` and `findings.md`. Take "Findings
+not fixed" and "Non-blocking findings" from `findings.md`. End with one next action the user can do
+in under two minutes.
 
 ## Rules
 
@@ -354,8 +453,7 @@ After the report, check gate C. End with one next action the user can do in unde
   - the commit step
 - Never report a step as done when its agent reported a failure.
 - Keep every fact from an agent's report: a path, a number, a caveat.
-- Effort: the frontmatter `effort` field (`low` to `max`) and the `Agent` `effort` parameter
-  (Claude Code v2.1.292 or later) set it. No team agent sets it.
+- Effort: see "Effort" and the Effort column in "Model policy".
 
 
 

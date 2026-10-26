@@ -3,6 +3,7 @@ name: Explore
 description: Use for broad searches over many files and for questions about how code works, when the caller needs the conclusion and not the file contents. It locates code and explains how it works. It does not review or audit code. Triggers on find, where is, locate, which files, callers, usages, how does, how it works, flow, what calls.
 tools: Read, Grep, Glob, PowerShell, Bash, mcp__codegraph__codegraph_explore
 model: haiku
+effort: medium
 omitClaudeMd: true
 ---
 

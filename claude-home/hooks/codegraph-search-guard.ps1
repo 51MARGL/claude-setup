@@ -2,12 +2,17 @@ param([string]$Mode)
 
 $ErrorActionPreference = 'Stop'
 
+$scriptStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+
 $stateRoot = Join-Path $env:USERPROFILE '.claude\team-setup'
 $gateDirectory = Join-Path $stateRoot 'codegraph-search-guard'
 $logPath = Join-Path $stateRoot 'codegraph-search-guard.log'
 $logRotationBytes = 1MB
-$deniesBeforeOpen = 3
+$deniesBeforeOpen = 1
 $staleGateDays = 7
+$indexStatusTimeoutMilliseconds = 6000
+$indexStatusBudgetMilliseconds = 8500
+$unsafeIndexRootPattern = '[&|<>^%!(),;=\s"]'
 
 $searchToolNames = @('Grep', 'Glob', 'Bash', 'PowerShell')
 $commandPrefilterPattern = '(?i)grep|\brg\b|findstr|select-string|\bsls\b|\bfind\b|get-childitem|\bgci\b|\bdir\b|\bls\b|\bsed\b'
@@ -40,6 +45,7 @@ $redirectionPattern = '^\d*>|^<'
 $maxNamePatternParts = 32
 $maxSearchPaths = 20
 $indexedRootCache = @{}
+$indexHasFilesByRoot = @{}
 
 function Write-GuardLog {
     param([string]$Level, [string]$Text)
@@ -592,6 +598,54 @@ function Resolve-OperandPaths {
     }
 }
 
+function Get-IndexedFileCount {
+    param([string]$IndexedRoot)
+
+    # cmd.exe parses these characters in an unquoted argument, and ArgumentList quotes only whitespace and double quotes.
+    if ($IndexedRoot -match $unsafeIndexRootPattern) { throw 'The index root has a character that cmd.exe parses.' }
+    if ($scriptStopwatch.ElapsedMilliseconds + $indexStatusTimeoutMilliseconds -gt $indexStatusBudgetMilliseconds) { throw 'No time left for codegraph status.' }
+    $statusCommand = (Get-Command codegraph.cmd -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new($statusCommand)
+    foreach ($argument in @('status', '--json', $IndexedRoot)) { $startInfo.ArgumentList.Add($argument) }
+    $startInfo.WorkingDirectory = $stateRoot
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $statusStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $statusProcess = [System.Diagnostics.Process]::Start($startInfo)
+    try {
+        $outputTask = $statusProcess.StandardOutput.ReadToEndAsync()
+        $null = $statusProcess.StandardError.ReadToEndAsync()
+        if (-not $statusProcess.WaitForExit($indexStatusTimeoutMilliseconds)) {
+            $statusProcess.Kill($true)
+            throw 'codegraph status timed out.'
+        }
+        $remainingMilliseconds = [Math]::Max(0, $indexStatusTimeoutMilliseconds - [int]$statusStopwatch.ElapsedMilliseconds)
+        if (-not $outputTask.Wait($remainingMilliseconds)) {
+            $statusProcess.Kill($true)
+            throw 'codegraph status output timed out.'
+        }
+        return [int](($outputTask.Result | ConvertFrom-Json).fileCount)
+    } finally {
+        $statusProcess.Dispose()
+    }
+}
+
+function Test-IndexHasFiles {
+    param([string]$IndexedRoot)
+
+    $rootKey = $IndexedRoot.ToLowerInvariant()
+    if ($indexHasFilesByRoot.ContainsKey($rootKey)) { return $indexHasFilesByRoot[$rootKey] }
+    try {
+        $hasFiles = (Get-IndexedFileCount -IndexedRoot $IndexedRoot) -gt 0
+    } catch {
+        $hasFiles = $false
+    }
+    $indexHasFilesByRoot[$rootKey] = $hasFiles
+    return $hasFiles
+}
+
 function Get-IndexedRoot {
     param([string]$Path)
 
@@ -601,7 +655,7 @@ function Get-IndexedRoot {
     $indexedRoot = $null
     $level = $Path
     while ($level) {
-        if ([System.IO.File]::Exists([System.IO.Path]::Combine($level, '.codegraph', 'codegraph.db'))) {
+        if ([System.IO.File]::Exists([System.IO.Path]::Combine($level, '.codegraph', 'codegraph.db')) -and (Test-IndexHasFiles -IndexedRoot $level)) {
             $indexedRoot = $level
             break
         }
