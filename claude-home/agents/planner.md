@@ -1,7 +1,7 @@
 ---
 name: planner
 description: Use after the design is settled and before any code is written — breaks a feature, a bug fix, or a refactor into numbered phases with real file paths, risks, a test plan, and an estimate in MD. Triggers on implementation plan, break this down, phases, estimate, "what files do I touch", "plan this feature". Never edits files. Runs only read commands such as git diff and the parser check. Produces a plan, never writes code.
-tools: Read, Grep, Glob, PowerShell, Bash, mcp__codegraph__codegraph_explore
+tools: Read, Grep, Glob, PowerShell, Bash, mcp__codegraph__codegraph_explore, Agent
 model: opus
 ---
 

@@ -183,7 +183,7 @@ try {
     Remove-Item -LiteralPath $pendingMarkerPath -Force
     Remove-Item -LiteralPath $failureMarkerPath -Force -ErrorAction SilentlyContinue
     Write-InitLog 'INFO' "codegraph init finished in $topLevel."
-    Write-HookMessage "CodeGraph indexed $topLevel in $([int][Math]::Round($initStopwatch.Elapsed.TotalSeconds)) s." -AdditionalContext 'This repo has a CodeGraph index. Call the `codegraph_explore` tool first to find a symbol, its callers, or its usages. If the tool is deferred, load it with ToolSearch `select:mcp__codegraph__codegraph_explore`.'
+    Write-HookMessage "CodeGraph indexed $topLevel in $([int][Math]::Round($initStopwatch.Elapsed.TotalSeconds)) s." -AdditionalContext 'This repo has a CodeGraph index. Call the `codegraph_explore` tool first to find a symbol, its callers, or its usages. If the tool is deferred, load it with ToolSearch `select:mcp__codegraph__codegraph_explore`. Send a question about how code works, and a symbol search, to the `Explore` agent in this session. It calls this tool and returns a short answer.'
 } catch {
     Write-InitLog 'ERROR' "$($_.Exception.Message) $($_.ScriptStackTrace)"
     exit 0

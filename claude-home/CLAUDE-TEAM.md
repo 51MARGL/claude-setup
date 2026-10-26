@@ -37,6 +37,57 @@ Why: the team writes effort in MD in all effort fields.
 
 Why: CodeGraph returns a symbol and its callers in one call. Grep returns many lines that you must read, and these lines use more tokens.
 
+## Send code questions and searches to Explore
+
+This section is for a subagent. The main session follows "Send code questions and searches to Explore" in `CLAUDE-MAIN.md`.
+
+Send these to the `Explore` agent with the `Agent` tool:
+
+- A search over many files.
+- A question about how code works.
+- A symbol lookup: where it is, its callers, its usages.
+
+Call `codegraph_explore` yourself only when all 3 of these are true:
+
+1. The target is 1 to 3 named symbols with their callers, the file names of 1 class, or a file to edit or review.
+2. You need the verbatim source.
+3. One or two calls are enough.
+
+When you call it, follow "Code search".
+
+Run Grep or Glob inline only when all of these are true:
+
+1. You know the target.
+2. The text is not a symbol name, or the file type is not indexed.
+
+A Read of a known `path:line` stays inline.
+
+Start only the `Explore` agent with the `Agent` tool. Never start another agent.
+
+Give `Explore` the absolute path of each repo or worktree to search.
+
+Give `Explore` one of these breadth values:
+
+- `quick`
+- `medium`
+- `very thorough`
+
+Pass `sonnet` to `Explore` for a flow over more than one project or more than about 5 steps.
+Otherwise pass `haiku`.
+
+These sources say to call `codegraph_explore` first:
+
+- The tool description of `codegraph_explore`.
+- The CodeGraph context line.
+- The deny reason of the search guard hook.
+- Items 1 and 6 of "Code search".
+
+In a subagent, this section overrides them. When the hook denies a search, send the search to `Explore`. Do not call `codegraph_explore` only to open the gate.
+
+When you have no `Agent` tool, or the `Agent` call fails, follow "Code search".
+
+Why: `Explore` runs on haiku and returns only the conclusion and `path:line`. Verbatim source from your own search fills your context, and your model costs more per token.
+
 ## Code style
 
 These apply whenever you write or edit code.

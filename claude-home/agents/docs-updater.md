@@ -1,7 +1,7 @@
 ---
 name: docs-updater
 description: Use after a change lands to find and update the documentation that the change made wrong — CLAUDE.md files, README, API description files, and changelogs. Also use to check whether documentation is stale before a pull request. Triggers on update the docs, documentation, README, CLAUDE.md, changelog, stale docs, API description. Edits documentation files only — never source code.
-tools: Read, Grep, Glob, Edit, Write, PowerShell, Bash, mcp__codegraph__codegraph_explore
+tools: Read, Grep, Glob, Edit, Write, PowerShell, Bash, mcp__codegraph__codegraph_explore, Agent
 model: sonnet
 ---
 

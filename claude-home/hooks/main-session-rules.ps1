@@ -23,7 +23,7 @@ try {
         if ($repoRoot -and
             (Test-Path -LiteralPath (Join-Path $repoRoot '.codegraph\codegraph.db')) -and
             (Get-Command codegraph.cmd -CommandType Application -ErrorAction SilentlyContinue)) {
-            $additionalContext += "`r`n`r`nThis repo has a CodeGraph index. Call the ``codegraph_explore`` tool first to find a symbol, its callers, or its usages. If the tool is deferred, load it with ToolSearch ``select:mcp__codegraph__codegraph_explore``."
+            $additionalContext += "`r`n`r`nThis repo has a CodeGraph index. Call the ``codegraph_explore`` tool first to find a symbol, its callers, or its usages. If the tool is deferred, load it with ToolSearch ``select:mcp__codegraph__codegraph_explore``. Send a question about how code works, and a symbol search, to the ``Explore`` agent in this session. It calls this tool and returns a short answer."
         }
     } catch {
         $additionalContext = Get-Content -LiteralPath $rulesPath -Raw

@@ -74,7 +74,8 @@ $sensitivePaths = @(
     'claude-home/agents/devops.md',
     'claude-home/agents/pr-reviewer.md',
     'claude-home/agents/git.md',
-    'claude-home/agents/explore.md'
+    'claude-home/agents/explore.md',
+    'claude-home/agents/explore-web.md'
 )
 
 function Write-UpdateLog {

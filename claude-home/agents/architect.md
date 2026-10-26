@@ -1,7 +1,7 @@
 ---
 name: architect
 description: Use BEFORE planning when the question is where a change belongs, what contract it exposes, or what it breaks. Triggers on architecture, system design, where should this live, new service, breaking change, API contract, blast radius, ADR. Never edits files. Runs only read commands such as git diff and the parser check. Produces a design note with one recommendation.
-tools: Read, Grep, Glob, PowerShell, Bash, mcp__codegraph__codegraph_explore
+tools: Read, Grep, Glob, PowerShell, Bash, mcp__codegraph__codegraph_explore, Agent
 model: opus
 ---
 

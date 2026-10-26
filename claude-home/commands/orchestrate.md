@@ -87,7 +87,7 @@ Pass `model` on every `Agent` call. Default to these, and say in one line when y
 | implementer agents, fix pass | `sonnet` | The plan already holds the decisions, so the step is execution, not judgement |
 | `tester` | `sonnet` | The test plan already names what to assert. Raise it to `opus` when its report says "Recommend `opus`", or when the tests must control concurrency or guard a published contract |
 | `code-reviewer`, `security-reviewer`, `migration-reviewer` | `sonnet` | The agent file holds the checks. Raise it to `opus` by the rules in "Reviewer model" |
-| `style-reviewer`, `devops`, `git`, `Explore` | `haiku` | Rule matching, lookup, and search. The agent file holds the rules, so the step needs no judgement. Raise it to `sonnet` when the report misses a rule or a file that you can see |
+| `style-reviewer`, `devops`, `git`, `Explore`, `explore-web` | `haiku` | Rule matching, lookup, search, and flow summaries. The agent file holds the rules, so the step needs no judgement. Raise it to `sonnet` when the report misses a rule or a file that you can see. Raise `Explore` to `sonnet` for a flow over more than one project or more than about 5 steps |
 | `docs-updater` | `sonnet` | It decides which document the change made wrong, and it writes new text |
 | `general-purpose`, any other helper agent | `sonnet` | The task is open, so the agent file holds no rules for it |
 

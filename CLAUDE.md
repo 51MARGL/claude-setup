@@ -147,6 +147,9 @@ the installed copy. The next automatic update overwrites an edited installed fil
     deny adds the word `symbol`. The log has no pattern and no symbol name.
     The deny reason also tells the agent not to repeat the search with another tool. A symbol deny
     names the blocked symbols in the deny reason.
+  - Accepted cost: the rule in "Send code questions and searches to Explore" tells a subagent not to
+    call `codegraph_explore` only to open the gate. In a subagent, a closed gate can still deny the
+    first inline Grep or Glob code search, up to 3 times.
   - File-name search rules: `find` counts its `-name`, `-iname`, `-path`, `-ipath`, `-wholename`, and
     `-iwholename` values. It counts `-path` only with a wildcard, and `-regex` only with a code
     extension. A listing counts its `-Filter`, `-Include`, and wildcard values, and only with
@@ -171,7 +174,8 @@ the installed copy. The next automatic update overwrites an edited installed fil
   (home-relative) and not a placeholder.
 - **`CLAUDE-TEAM.md`**: copied. The user's own `%USERPROFILE%\.claude\CLAUDE.md` gets only the
   import line `@~/.claude/CLAUDE-TEAM.md`. `CLAUDE-TEAM.md` imports `STE.md` with the line
-  `@~/.claude/STE.md`.
+  `@~/.claude/STE.md`. It also holds the section "Send code questions and searches to Explore" for
+  subagents.
 - **`STE.md`**: copied. It holds the full STE rules. The main session and each agent load it through
   the import in `CLAUDE-TEAM.md`. The `devops`, `git`, and `pr-reviewer` agents have
   `omitClaudeMd: true`, so they read `STE.md` themselves.
@@ -186,14 +190,14 @@ the installed copy. The next automatic update overwrites an edited installed fil
   workflow. The folder is not under `commands\`, because each file there is a slash command.
 
 `update.ps1` names a file in its message when a new commit changes it (`$sensitivePaths`). The list
-has 41 paths in 3 groups:
+has 42 paths in 3 groups:
 
 1. The files that run code: `install.ps1`, `update.ps1`, `claude-home/hooks/main-session-rules.ps1`,
    `claude-home/hooks/notify.ps1`, `claude-home/hooks/codegraph-init.ps1`, `claude-home/hooks/codegraph-search-guard.ps1`,
    `claude-home/statusline.ps1`,
    and `claude-home/skills/strategic-compact/suggest-compact.ps1`.
 2. The files that set permissions, hooks, tools, or the model: `claude-home/settings.json`,
-   `mcp/servers.json`, and the 16 agent files `claude-home/agents/<name>.md`.
+   `mcp/servers.json`, and the 17 agent files `claude-home/agents/<name>.md`.
 3. The rules that the main session loads or follows: `claude-home/CLAUDE-TEAM.md`,
    `claude-home/CLAUDE-MAIN.md`, `claude-home/STE.md`, `claude-home/commands/orchestrate.md`, the 8
    files `claude-home/orchestrate/<name>.md`, `claude-home/output-styles/audhd.md`,
@@ -249,12 +253,21 @@ Several files hold the same fact. When you change one, change the others in the 
 15. **The agents with the CodeGraph tool**: the `tools:` line of `architect`, `planner`,
     `code-reviewer`, `security-reviewer`, `migration-reviewer`, `style-reviewer`, `docs-updater`,
     `tester`, and `explore` has `mcp__codegraph__codegraph_explore`. The 4 developer agents have all
-    tools. `git`, `devops`, and `pr-reviewer` do not get it. Keep this list the same in `README.md`
-    ("MCP servers").
+    tools. `git`, `devops`, `pr-reviewer`, and `explore-web` do not get it. The `tools:` line of
+    `pr-reviewer` and of the 8 agents with the CodeGraph tool, except `explore`, has `Agent`. The
+    developer agents have it through all tools. The limit to the `Explore` agent is a prompt rule
+    only, because Claude Code ignores `Agent(Explore)` in the `tools:` line of a subagent. Keep this
+    list the same in `README.md` ("MCP servers").
 16. **The CodeGraph context line** ("This repo has a CodeGraph index. Call the `codegraph_explore`
     tool first ..."): `main-session-rules.ps1` and `codegraph-init.ps1`. Keep the two texts
-    identical. The first three sentences of the deny reason in `codegraph-search-guard.ps1` are the
-    same text.
+    identical. The line has 5 sentences: 3 shared sentences and 2 sentences that send code questions
+    to `Explore`. The deny reason in `codegraph-search-guard.ps1` has only the 3 shared sentences.
+17. **The `Explore` routing rule**: the section "Send code questions and searches to Explore" in
+    `claude-home\CLAUDE-MAIN.md` (main session) and in `claude-home\CLAUDE-TEAM.md` (subagents).
+    Keep the same source list, the override sentence, the path sentence, the Grep and Glob
+    conditions, and the `sonnet` or `haiku` rule. The `Model policy` row of `orchestrate.md` has the
+    `sonnet` rule too. The `codegraph_explore` conditions differ on purpose: the subagent text is
+    wider (1 to 3 named symbols, 1 or 2 calls).
 
 ## Writing rules for this repository
 
