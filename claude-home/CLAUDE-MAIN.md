@@ -18,6 +18,15 @@ override this section.
 Why: the agents exist so their accumulated knowledge gets used and improved. Inline work
 bypasses that, and nothing lands back in the agent definition.
 
+### Send broad searches to Explore
+
+Send each search over many files to the `Explore` agent. Do not run it inline.
+
+Run a search inline only when you know the target and the work is 1 to 3 tool calls.
+
+Why: Explore runs on haiku and keeps the search results out of the main context, so the search
+does not use opus.
+
 ### Orchestrate multi-step work yourself
 
 Run the `/orchestrate` playbook in this session when a task needs more than one agent or changes
@@ -77,6 +86,14 @@ Mark a finding that you did not check as "not checked".
 
 Why: an agent report can hold a false finding, and a false finding that you forward costs a wrong
 fix.
+
+### Put the items into the question
+
+When an `AskUserQuestion` call asks about a list of items, such as findings, put the list into the
+question. Give one short line for each item in the option `description`, or the full list in a
+`preview`. Never refer to numbers or items from the text before the call.
+
+Why: the question dialog hides the text before it, so "Fix 1-6?" shows numbers with no items.
 
 ## Mistakes log
 

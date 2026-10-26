@@ -49,18 +49,123 @@ the installed copy. The next automatic update overwrites an edited installed fil
     entry that you delete from this file stays on every machine that has it. No retire list exists
     for permission entries, so an allow entry is a permanent grant on each machine. The allow entries
     let the main session read `~/.claude/commands/orchestrate.md`, `~/.claude/orchestrate/`, and
-    `STE.md` with no prompt. The main session reads the two `orchestrate` paths again after a
+    `STE.md` with no prompt. The allow entry `mcp__codegraph__codegraph_explore` lets the
+    `Explore` agent call CodeGraph with no prompt. The main session reads the two `orchestrate` paths again after a
     compact. Claude Code reads with no approval only inside the working directory and the
     additional directories. The deny entries guard the usual command form. They are not a security
     boundary around the program.
-  - `env` and other top-level keys (`model`, `effortLevel`, ...): the installer adds a key only when
+  - `env` and other top-level keys (`model`, `effortLevel`, `env.CODEGRAPH_TELEMETRY`, ...): the installer adds a key only when
     the user does not have it. A changed or deleted value never reaches an existing install.
   - `hooks`: a hook has the identity `command` + `args`. A hook with new `args` or a new `matcher`
     is added as a second hook. An existing hook is never changed.
   - `statusLine`: replaced.
 - **`mcp\servers.json`**: an entry has the type `stdio` or `http`. The installer adds it with
-  `claude mcp add --scope user`. It never changes an existing server. A changed entry reaches a
-  machine only after the user runs `claude mcp remove <name> --scope user` and `install.ps1` again.
+  `claude mcp add --scope user`. An entry with `alwaysLoad` is added with
+  `claude mcp add-json --scope user`. The JSON argument gets `\"` escapes under Legacy mode, and
+  under Windows mode when `claude` is a `.cmd` or `.bat` file. The installer never changes an
+  existing server, with one exception. It replaces a server that has no `alwaysLoad` when the entry
+  has `alwaysLoad`, `type`, `command`, and `args` are the same, `env` is absent or empty, and the
+  server has no other key. It removes the server, then adds it with `add-json`. On an add failure it
+  adds the old entry again, and then warns in a saved-switches run and throws in a manual run. It
+  skips with a warning when the definition differs or `.claude.json` is not readable. Any other
+  changed entry reaches a machine only after the user runs `claude mcp remove <name> --scope user`
+  and `install.ps1` again.
+  Before it adds the servers, `Install-CodeGraph` in `install.ps1` runs
+  `npm.cmd i -g @colbymchenry/codegraph@latest` in a manual run only. A saved-switches run of
+  `install.ps1` (the auto-update) runs no npm and prints a warning, and then `update.ps1` installs
+  CodeGraph. `-SkipMcp` skips it. It never upgrades. An npm
+  failure gives a warning and the install continues. `Install-CodeGraph` in `update.ps1` does the
+  install for the auto-update. It runs when `install-state.json` exists, `switches.SkipMcp` is not
+  true, and `codegraph` is not on `PATH`. It tries once per 24 hours and records the time in
+  `%USERPROFILE%\.claude\team-setup\codegraph-install-last-try.txt`. It deletes the file when
+  `codegraph` is installed. The lock file `codegraph-install.lock` in the same folder makes a second
+  session skip. When `npm.cmd` is missing, the message shows the npm command. When `npm prefix -g`
+  already holds `codegraph.cmd` (not on `PATH`) and `package.json` of the package has a readable
+  version, it runs no npm and shows no message. When `package.json` has no readable version, the
+  install is incomplete and it installs again (once per 24 hours). Otherwise it
+  runs the npm command with a timeout of 180 s (`-CodeGraphInstallTimeoutSeconds`). It skips npm when
+  less than 210 s of the hook timeout is left. After a success, the message is "The update installed
+  CodeGraph <version>. Restart Claude Code ..." (the version only when it matches a semver pattern).
+  On a failure the message is "CodeGraph failed to install. Run: npm i -g ... Then restart Claude Code.
+  See <log>." The `update.log` file holds the npm output.
+  This is an unattended `npm i -g` from the public registry, with the package install scripts. Both
+  npm child processes (`npm prefix -g` and the install) run in `%USERPROFILE%\.claude\team-setup`
+  and get no `ANTHROPIC_*` or `CLAUDE_CODE_*` variable. This is defence in depth only. The install
+  scripts run as the user and can read user files, such as `%USERPROFILE%\.claude\.credentials.json`.
+- **`hooks\codegraph-init.ps1`**: a synchronous `SessionStart` hook (`startup`, timeout 660, `async` false,
+  `statusMessage` "Initializing CodeGraph..."). It runs `codegraph init --yes <toplevel>` in each git
+  repo that has no index. The first start in such a repo waits for the init. It does nothing in a repo
+  that tracks `.codegraph` (any letter case), and also when `git ls-files` fails. The script kills
+  its own process tree after 570 s, below the hook timeout. After a success it prints "CodeGraph
+  indexed <repo> in <N> s." and returns `additionalContext` with the CodeGraph context line. After a failure or a timeout it prints "CodeGraph init failed in <repo>.
+  The hook tries again after 24 h. See <log>." and writes
+  `%USERPROFILE%\.claude\team-setup\codegraph-init-<hash>.failed`. It skips that repo for 24 h. A
+  success deletes the file. A pending marker
+  `%USERPROFILE%\.claude\team-setup\codegraph-init-<hash>.pending` makes a run that was killed during
+  init run init again. Every other path prints nothing. The `codegraph` MCP server looks for the
+  index again at each tool call, so the index works in the same session. It adds `.codegraph/` to `.git/info/exclude` (the common dir, so all worktrees) to keep `git status`
+  clean and to stop `git add -A` from adding `.codegraph/.gitignore`. It has no opt-out.
+- **`hooks\codegraph-search-guard.ps1`**: one script with the mode `pre` or `post`.
+  - `pre`: a synchronous `PreToolUse` hook (matcher `Grep|Glob|Bash|PowerShell`, timeout 10). It denies a
+    code search when all of these are true: the call is a search (the Grep tool, or a shell segment
+    that starts with `grep`, `egrep`, `fgrep`, `rg`, `findstr`, `Select-String`, `sls`, `git grep`,
+    `xargs grep`, `sed` with a regex address, or `Select-String` after `Get-ChildItem`, `gci`, `dir`, or `ls`) and the filter is
+    absent or names `.cs`, `.ts`, `.tsx`, `.js`, or `.jsx`; or the call is a file-name search (the
+    Glob tool, `find`, or a listing with `Get-ChildItem`, `gci`, `dir`, or `ls`) and the name
+    pattern has no extension, or names a code extension; a Grep or Glob `path` is inside the repo (a UNC
+    path or a path outside the repo is allowed); `<root>\.codegraph\codegraph.db` exists (the root
+    is the first folder with `.git`, from `cwd` up) and `codegraph.cmd` is on `PATH`; `agent_type`
+    is not `git`, `devops`, `pr-reviewer`, `claude-code-guide`, or `statusline-setup`; and the gate of
+    this session and agent is closed, or the search is a blocked symbol search (see below).
+  - `sed` rule: a `sed` segment is a search only when its script has a regex address, such as
+    `/pattern/p` or `/a/,/b/p`. The pattern is the regex in the first address. `sed` with only
+    line-number addresses (`sed -n '10,40p' file`), with `-i` or `--in-place`, or with `-f` is
+    not a search. The filter and repo checks are the same as for `grep`.
+  - Symbol rule: for a content search, the hook takes the pattern (the Grep tool `pattern`, the value
+    of `-e`, `--regexp`, or `-Pattern`, or else the first word that is not a flag or a flag value, or
+    the `sed` address regex). It strips `\b`, `\<`, `\>`, `^`, `$`, a trailing `(` or `\(`, and a
+    leading `\.` from each alternative (split on `|` and `\|`). The pattern is a symbol pattern when
+    each alternative is an identifier of at least 4 characters that is camelCase or PascalCase, or
+    has `_` between letters. A plain word such as `error` is not a symbol pattern. When the gate is
+    open, the hook denies a symbol search, with two exceptions:
+    - (a) Each symbol name was in an earlier symbol deny of this gate key, and a `codegraph_explore`
+      call ran after that deny. A symbol that CodeGraph cannot find can be searched after one try.
+    - (b) 3 symbol denies ran with no `codegraph_explore` call between them. The next symbol search runs.
+    A symbol search with a closed gate follows the normal closed-gate rule (3-deny escape). The deny
+    also records the names, so exception (a) applies after the next `codegraph_explore` call.
+  - `post`: a `PostToolUse` hook (matcher `mcp__codegraph__codegraph_explore`, timeout 10) in the
+    same array as the `Agent|Task` strategic-compact hook. It writes the `.open` marker, also when
+    CodeGraph returns an error text. It also moves the names from `.symbols-denied` to
+    `.symbols-explored`, and deletes `.symbols-denied` and `.symbol-denies`.
+  - The gate key is `<session_id>-<agent_id|main>`. The gate opens after one `codegraph_explore` call
+    or after 3 denies. After the gate opens, only a plain-text search runs freely. The state is in
+    `%USERPROFILE%\.claude\team-setup\codegraph-search-guard\` (`.open`, `.denies`, `.symbol-denies`,
+    `.symbols-denied`, `.symbols-explored`). The deny path deletes files older than 7 days, also
+    these new files. The log is
+    `%USERPROFILE%\.claude\team-setup\codegraph-search-guard.log` (1 MB rotation). It has one line
+    for each deny, with only the tool name, the agent type, and the search command word. A symbol
+    deny adds the word `symbol`. The log has no pattern and no symbol name.
+    The deny reason also tells the agent not to repeat the search with another tool. A symbol deny
+    names the blocked symbols in the deny reason.
+  - File-name search rules: `find` counts its `-name`, `-iname`, `-path`, `-ipath`, `-wholename`, and
+    `-iwholename` values. It counts `-path` only with a wildcard, and `-regex` only with a code
+    extension. A listing counts its `-Filter`, `-Include`, and wildcard values, and only with
+    recursion (`-Recurse`, `-R`, or `**`). `find -type d` and `-Directory` are skipped, and so is
+    `-Exclude`. A name with no extension is a search, except a name on the allow list (`Dockerfile`,
+    `Makefile`, `README`, `LICENSE`, ...). A Glob tool call is allowed when the file-name part of
+    the pattern starts with a literal name (`[A-Za-z0-9_-]` with a letter) before any wildcard, such
+    as `**/OrderService*.cs`. This lets the model get the file names of one class (item 5 of "Code
+    search" in `CLAUDE-TEAM.md`). A Glob that starts with a wildcard, such as `**/*.cs`, is a search.
+  - It fails open: an error, a timeout, or a malformed or empty input lets the call run. It only
+    denies or prints nothing, and never returns "allow".
+  - Limits: a shell search of a folder outside the repo is still denied. `git -C x grep` is not
+    matched. A dotted name such as `MyApp.Services*` is allowed. A listing with no recursion is
+    allowed. `Where-Object -like` after a listing is not matched. `find -regex` with a group, such
+    as `.*\.(cs|ts)`, is allowed. `awk` and `perl` are not matched. The symbol test is a heuristic
+    for the shape of a name, so a symbol in a pattern with regex syntax is not found, and a
+    camelCase word that is not a symbol is blocked. The deny count is not atomic. Each Grep, Glob, Bash, and PowerShell
+    call starts `pwsh` once (about 1 s), also for a command that is not a search. The hook has no
+    opt-out.
 - **Placeholders**: the installer replaces `{{CLAUDE_HOME}}` and `{{TEAM_SETUP_REPO}}` with real
   paths. Use them in every path in `settings.json`. The exception: a permission rule path uses `~/`
   (home-relative) and not a placeholder.
@@ -74,16 +179,19 @@ the installed copy. The next automatic update overwrites an edited installed fil
   `hooks\main-session-rules.ps1` (a `SessionStart` hook) prints it as context. A subagent gets no
   copy, because the hook exits when `agent_id` is set. The hook runs at `startup|resume|clear|compact`.
   When the file is missing or the read fails, the hook shows a message that the rules did not load.
+  The hook walks up from `cwd` to the first folder with `.git`. It adds the CodeGraph context line
+  when `<root>\.codegraph\codegraph.db` exists and `codegraph.cmd` is on `PATH`.
 - **`orchestrate\`**: copied. It holds one file for each `/orchestrate` workflow and
   `shared-steps.md`. Step 0 of `commands\orchestrate.md` reads only the files of the chosen
   workflow. The folder is not under `commands\`, because each file there is a slash command.
 
 `update.ps1` names a file in its message when a new commit changes it (`$sensitivePaths`). The list
-has 39 paths in 3 groups:
+has 41 paths in 3 groups:
 
 1. The files that run code: `install.ps1`, `update.ps1`, `claude-home/hooks/main-session-rules.ps1`,
-   `claude-home/hooks/notify.ps1`, `claude-home/statusline.ps1`, and
-   `claude-home/skills/strategic-compact/suggest-compact.ps1`.
+   `claude-home/hooks/notify.ps1`, `claude-home/hooks/codegraph-init.ps1`, `claude-home/hooks/codegraph-search-guard.ps1`,
+   `claude-home/statusline.ps1`,
+   and `claude-home/skills/strategic-compact/suggest-compact.ps1`.
 2. The files that set permissions, hooks, tools, or the model: `claude-home/settings.json`,
    `mcp/servers.json`, and the 16 agent files `claude-home/agents/<name>.md`.
 3. The rules that the main session loads or follows: `claude-home/CLAUDE-TEAM.md`,
@@ -133,6 +241,20 @@ Several files hold the same fact. When you change one, change the others in the 
 12. **The sensitive paths**: `$sensitivePaths` in `update.ps1`, the list in "How the installer treats
     each file" in this file, and the "Security" section of `README.md`. Keep the three lists the
     same.
+13. **The update hook timeout**: `$hookTimeoutSeconds` (400) in `update.ps1` and the `timeout` of the
+    update hook in `claude-home\settings.json`. The time guard of `Install-CodeGraph` uses the value.
+14. **The code-search rule**: "Code search" in `claude-home\CLAUDE-TEAM.md` and "How to search" in
+    `claude-home\agents\explore.md`. Keep the same terms, the same list of file types, the ToolSearch
+    step, the symbol check before a Grep, and the Read exception.
+15. **The agents with the CodeGraph tool**: the `tools:` line of `architect`, `planner`,
+    `code-reviewer`, `security-reviewer`, `migration-reviewer`, `style-reviewer`, `docs-updater`,
+    `tester`, and `explore` has `mcp__codegraph__codegraph_explore`. The 4 developer agents have all
+    tools. `git`, `devops`, and `pr-reviewer` do not get it. Keep this list the same in `README.md`
+    ("MCP servers").
+16. **The CodeGraph context line** ("This repo has a CodeGraph index. Call the `codegraph_explore`
+    tool first ..."): `main-session-rules.ps1` and `codegraph-init.ps1`. Keep the two texts
+    identical. The first three sentences of the deny reason in `codegraph-search-guard.ps1` are the
+    same text.
 
 ## Writing rules for this repository
 

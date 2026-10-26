@@ -3,7 +3,8 @@
     "allow": [
       "Read(~/.claude/commands/orchestrate.md)",
       "Read(~/.claude/orchestrate/*.md)",
-      "Read(~/.claude/STE.md)"
+      "Read(~/.claude/STE.md)",
+      "mcp__codegraph__codegraph_explore"
     ],
     "deny": [
       "Bash(git push --force *)",
@@ -164,6 +165,9 @@
     ]
   },
   "model": "opus[1m]",
+  "env": {
+    "CODEGRAPH_TELEMETRY": "0"
+  },
   "hooks": {
     "PostToolUse": [
       {
@@ -176,6 +180,23 @@
               "-NoProfile",
               "-File",
               "{{CLAUDE_HOME}}/skills/strategic-compact/suggest-compact.ps1"
+            ],
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__codegraph__codegraph_explore",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pwsh",
+            "args": [
+              "-NoProfile",
+              "-NonInteractive",
+              "-File",
+              "{{CLAUDE_HOME}}/hooks/codegraph-search-guard.ps1",
+              "post"
             ],
             "timeout": 10
           }
@@ -212,6 +233,23 @@
             ],
             "timeout": 30,
             "async": true
+          }
+        ]
+      },
+      {
+        "matcher": "Grep|Glob|Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pwsh",
+            "args": [
+              "-NoProfile",
+              "-NonInteractive",
+              "-File",
+              "{{CLAUDE_HOME}}/hooks/codegraph-search-guard.ps1",
+              "pre"
+            ],
+            "timeout": 10
           }
         ]
       }
@@ -264,7 +302,20 @@
               "{{TEAM_SETUP_REPO}}/update.ps1"
             ],
             "timeout": 400,
-            "statusMessage": "Checking for team Claude setup update..."
+            "statusMessage": "Checking for team Claude setup update and CodeGraph..."
+          },
+          {
+            "type": "command",
+            "command": "pwsh",
+            "args": [
+              "-NoProfile",
+              "-NonInteractive",
+              "-File",
+              "{{CLAUDE_HOME}}/hooks/codegraph-init.ps1"
+            ],
+            "timeout": 660,
+            "async": false,
+            "statusMessage": "Initializing CodeGraph..."
           }
         ]
       },

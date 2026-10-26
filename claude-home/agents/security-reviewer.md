@@ -1,7 +1,7 @@
 ---
 name: security-reviewer
 description: Security review of .NET, TypeScript/React, and PowerShell code that handles input, authentication, authorization, file paths, external calls, configuration, or personal data. Triggers on security review, is this safe, vulnerability, injection, hardcoded secret, OWASP. Reports findings only — never edits files, never runs an exploit against a live system.
-tools: Read, Grep, Glob, PowerShell, Bash
+tools: Read, Grep, Glob, PowerShell, Bash, mcp__codegraph__codegraph_explore
 model: sonnet
 ---
 

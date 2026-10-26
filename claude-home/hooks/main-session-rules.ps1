@@ -14,10 +14,25 @@ try {
         exit 0
     }
 
+    $additionalContext = Get-Content -LiteralPath $rulesPath -Raw
+    try {
+        $repoRoot = [string]$payload.cwd
+        while ($repoRoot -and -not (Test-Path -LiteralPath (Join-Path $repoRoot '.git'))) {
+            $repoRoot = Split-Path -Parent $repoRoot
+        }
+        if ($repoRoot -and
+            (Test-Path -LiteralPath (Join-Path $repoRoot '.codegraph\codegraph.db')) -and
+            (Get-Command codegraph.cmd -CommandType Application -ErrorAction SilentlyContinue)) {
+            $additionalContext += "`r`n`r`nThis repo has a CodeGraph index. Call the ``codegraph_explore`` tool first to find a symbol, its callers, or its usages. If the tool is deferred, load it with ToolSearch ``select:mcp__codegraph__codegraph_explore``."
+        }
+    } catch {
+        $additionalContext = Get-Content -LiteralPath $rulesPath -Raw
+    }
+
     $hookOutput = @{
         hookSpecificOutput = @{
             hookEventName     = 'SessionStart'
-            additionalContext = Get-Content -LiteralPath $rulesPath -Raw
+            additionalContext = $additionalContext
         }
     }
     Write-Output ($hookOutput | ConvertTo-Json -Depth 5 -Compress -EscapeHandling EscapeNonAscii)

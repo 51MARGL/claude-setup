@@ -19,6 +19,7 @@ $placeholder = '{{CLAUDE_HOME}}'
 $repoPlaceholder = '{{TEAM_SETUP_REPO}}'
 $repoRootForwardSlashes = $PSScriptRoot -replace '\\', '/'
 $removedFiles = [System.Collections.Generic.List[string]]::new()
+$codeGraphPackage = '@colbymchenry/codegraph'
 $stateRoot = Join-Path $targetRoot 'team-setup'
 $statePath = Join-Path $stateRoot 'install-state.json'
 $teamImportLine = '@~/.claude/CLAUDE-TEAM.md'
@@ -30,6 +31,18 @@ function Read-InstallState {
     } catch {
         throw "The install state file '$statePath' is not valid JSON. Fix or remove it, then run the installer again. $($_.Exception.Message)"
     }
+}
+
+function Get-McpAddJsonArguments {
+    param([string]$ServerName, [System.Collections.IDictionary]$Entry, [string]$ClaudePath)
+
+    $entryJson = $Entry | ConvertTo-Json -Depth 10 -Compress
+    $passingMode = (Get-Variable PSNativeCommandArgumentPassing -ErrorAction Ignore).Value
+    $isBatchFile = $ClaudePath -match '\.(cmd|bat)$'
+    if ($passingMode -notin 'Windows', 'Standard' -or ($passingMode -eq 'Windows' -and $isBatchFile)) {
+        $entryJson = $entryJson.Replace('"', '\"')
+    }
+    return @('mcp', 'add-json', '--scope', 'user', $ServerName, $entryJson)
 }
 
 $installState = Read-InstallState
@@ -365,6 +378,30 @@ try {
         return $plan
     }
 
+    function Install-CodeGraph {
+        if (Get-Command codegraph -CommandType Application -ErrorAction SilentlyContinue) {
+            Write-Host 'CodeGraph is already installed. Skipped.'
+            return
+        }
+        if ($PSCmdlet.ParameterSetName -eq 'Saved') {
+            Write-Warning "CodeGraph is not installed. Run: npm i -g $codeGraphPackage@latest"
+            return
+        }
+        $npmCommand = Get-Command npm.cmd -CommandType Application -ErrorAction SilentlyContinue
+        if (-not $npmCommand) {
+            Write-Warning "npm was not found on PATH. Install Node.js 18 or later. Then run: npm i -g $codeGraphPackage@latest"
+            return
+        }
+        if ($PSCmdlet.ShouldProcess($codeGraphPackage, 'Install npm package globally')) {
+            & $npmCommand.Source i -g "$codeGraphPackage@latest" | Out-Host
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warning "npm failed to install $codeGraphPackage. Exit code $LASTEXITCODE. Run: npm i -g $codeGraphPackage@latest"
+                return
+            }
+            Write-Host 'Installed CodeGraph'
+        }
+    }
+
     if (-not (Test-Path -LiteralPath $targetRoot)) {
         if ($PSCmdlet.ShouldProcess($targetRoot, 'Create directory')) {
             New-Item -ItemType Directory -Path $targetRoot -Force | Out-Null
@@ -458,17 +495,20 @@ try {
     if ($SkipMcp) {
         Write-Host 'Skipped MCP servers'
     } else {
+        Install-CodeGraph
         $claudeCli = Get-Command claude -ErrorAction SilentlyContinue
         $userClaudeConfigPath = Join-Path $env:USERPROFILE '.claude.json'
         $userClaudeConfigReadable = $true
         $existingServerNames = @()
+        $existingServers = @{}
         if (Test-Path -LiteralPath $userClaudeConfigPath) {
             try {
                 $userClaudeConfigText = Get-Content -LiteralPath $userClaudeConfigPath -Raw
                 if (-not [string]::IsNullOrWhiteSpace($userClaudeConfigText)) {
                     $userClaudeConfig = $userClaudeConfigText | ConvertFrom-Json -AsHashtable
                     if ($userClaudeConfig -is [System.Collections.IDictionary] -and $userClaudeConfig['mcpServers'] -is [System.Collections.IDictionary]) {
-                        $existingServerNames = @($userClaudeConfig['mcpServers'].Keys)
+                        $existingServers = $userClaudeConfig['mcpServers']
+                        $existingServerNames = @($existingServers.Keys)
                     }
                 }
             } catch {
@@ -478,7 +518,10 @@ try {
         }
         foreach ($serverName in $mcpServers.Keys) {
             $server = $mcpServers[$serverName]
-            if ($server['type'] -eq 'stdio') {
+            $wantsAlwaysLoad = $server['alwaysLoad'] -eq $true
+            if ($wantsAlwaysLoad) {
+                $addArguments = Get-McpAddJsonArguments -ServerName $serverName -Entry $server -ClaudePath $claudeCli.Source
+            } elseif ($server['type'] -eq 'stdio') {
                 $addArguments = @('mcp', 'add', '--transport', 'stdio', '--scope', 'user', $serverName, '--', $server['command']) + @($server['args'])
             } elseif ($server['type'] -eq 'http') {
                 $addArguments = @('mcp', 'add', '--transport', $server['type'], '--scope', 'user', $serverName, $server['url'])
@@ -488,7 +531,12 @@ try {
             }
 
             if (-not $claudeCli) {
-                Write-Warning "The claude CLI was not found on PATH. Run this command to add the MCP server '$serverName': claude $($addArguments -join ' ')"
+                $addCommandText = if ($wantsAlwaysLoad) {
+                    "claude mcp add-json --scope user $serverName '$($server | ConvertTo-Json -Depth 10 -Compress)'"
+                } else {
+                    "claude $($addArguments -join ' ')"
+                }
+                Write-Warning "The claude CLI was not found on PATH. Run this command to add the MCP server '$serverName': $addCommandText"
                 continue
             }
 
@@ -499,7 +547,53 @@ try {
                 $serverExists = $LASTEXITCODE -eq 0
             }
             if ($serverExists) {
-                Write-Host "MCP server '$serverName' already exists. Skipped."
+                if (-not $wantsAlwaysLoad) {
+                    Write-Host "MCP server '$serverName' already exists. Skipped."
+                    continue
+                }
+                if (-not $userClaudeConfigReadable) {
+                    Write-Warning "The installer cannot read '$userClaudeConfigPath', so it cannot see if the MCP server '$serverName' has alwaysLoad. Skipped."
+                    continue
+                }
+                $existingServer = $existingServers[$serverName]
+                if ($existingServer -isnot [System.Collections.IDictionary] -or $existingServer['alwaysLoad'] -eq $true) {
+                    Write-Host "MCP server '$serverName' already exists. Skipped."
+                    continue
+                }
+                $sameDefinition = $existingServer['type'] -eq $server['type'] -and
+                    $existingServer['command'] -eq $server['command'] -and
+                    (@($existingServer['args']) -join "`n") -eq (@($server['args']) -join "`n") -and
+                    ($null -eq $existingServer['env'] -or ($existingServer['env'] -is [System.Collections.IDictionary] -and $existingServer['env'].Count -eq 0)) -and
+                    -not @($existingServer.Keys | Where-Object { $_ -notin @('type', 'command', 'args', 'env', 'alwaysLoad') })
+                if (-not $sameDefinition) {
+                    Write-Warning "The MCP server '$serverName' exists with a different definition and has no alwaysLoad. The installer leaves it unchanged. To replace it, run: claude mcp remove $serverName --scope user. Then run install.ps1 again."
+                    continue
+                }
+                if ($PSCmdlet.ShouldProcess($serverName, 'Replace MCP server to set alwaysLoad')) {
+                    & claude mcp remove $serverName --scope user
+                    if ($LASTEXITCODE -ne 0) {
+                        $mcpFailureText = "claude mcp remove failed for '$serverName' with exit code $LASTEXITCODE."
+                        if ($PSCmdlet.ParameterSetName -eq 'Saved') {
+                            Write-Warning $mcpFailureText
+                            continue
+                        }
+                        throw $mcpFailureText
+                    }
+                    & claude @addArguments
+                    if ($LASTEXITCODE -ne 0) {
+                        $mcpFailureText = "claude mcp add-json failed for '$serverName' with exit code $LASTEXITCODE. The installer adds the old entry again."
+                        & claude @(Get-McpAddJsonArguments -ServerName $serverName -Entry $existingServer -ClaudePath $claudeCli.Source)
+                        if ($LASTEXITCODE -ne 0) {
+                            $mcpFailureText += " The old entry was not restored. Add the MCP server '$serverName' again by hand."
+                        }
+                        if ($PSCmdlet.ParameterSetName -eq 'Saved') {
+                            Write-Warning $mcpFailureText
+                            continue
+                        }
+                        throw $mcpFailureText
+                    }
+                    Write-Host "Replaced MCP server '$serverName' to set alwaysLoad"
+                }
                 continue
             }
 

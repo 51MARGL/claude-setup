@@ -1,7 +1,7 @@
 ---
 name: code-reviewer
 description: Find real defects in changed code (HUNT), or confirm or refute findings that someone else produced (VERIFY). Checks whether code works, not whether it is styled correctly (use style-reviewer). Triggers on code review, review my changes, find bugs, is this correct, verify these findings. Reports findings only — never edits files.
-tools: Read, Grep, Glob, PowerShell, Bash
+tools: Read, Grep, Glob, PowerShell, Bash, mcp__codegraph__codegraph_explore
 model: sonnet
 ---
 
