@@ -57,7 +57,8 @@ the installed copy. The next automatic update overwrites an edited installed fil
   - `env` and other top-level keys (`model`, `effortLevel`, `env.CODEGRAPH_TELEMETRY`, ...): the installer adds a key only when
     the user does not have it. A changed or deleted value never reaches an existing install.
   - `hooks`: a hook has the identity `command` + `args`. A hook with new `args` or a new `matcher`
-    is added as a second hook. An existing hook is never changed.
+    is added as a second hook. An existing hook is never changed. A hook can have an `if` key, a
+    permission rule that limits when the hook runs. The installer copies `if` with the hook.
   - `statusLine`: replaced.
 - **`mcp\servers.json`**: an entry has the type `stdio` or `http`. The installer adds it with
   `claude mcp add --scope user`. An entry with `alwaysLoad` is added with
@@ -105,6 +106,13 @@ the installed copy. The next automatic update overwrites an edited installed fil
   init run init again. Every other path prints nothing. The `codegraph` MCP server looks for the
   index again at each tool call, so the index works in the same session. It adds `.codegraph/` to `.git/info/exclude` (the common dir, so all worktrees) to keep `git status`
   clean and to stop `git add -A` from adding `.codegraph/.gitignore`. It has no opt-out.
+  - `worktree` mode (`codegraph-init.ps1 worktree`): three async `PostToolUse` hooks, timeout 660. The
+    matchers are `EnterWorktree`, `Bash` with `if` `Bash(*worktree add*)`, and `PowerShell` with `if`
+    `PowerShell(*worktree add*)`. The hook finds new worktrees with `git worktree list --porcelain`.
+    It indexes a worktree only when the main repo has an index, the worktree has no db, and the
+    `.git` file of the worktree is under 10 minutes old. The run has a budget of 600 s. For a shell
+    call, it reads `git -C` only in the `worktree add` segment. It skips UNC paths. It deletes
+    `.failed` and `.pending` markers older than 30 days. The `SessionStart` behaviour is the same.
 - **`hooks\codegraph-search-guard.ps1`**: one script with the mode `pre` or `post`.
   - `pre`: a synchronous `PreToolUse` hook (matcher `Grep|Glob|Bash|PowerShell`, timeout 10). It denies a
     code search when all of these are true: the call is a search (the Grep tool, or a shell segment
@@ -112,11 +120,24 @@ the installed copy. The next automatic update overwrites an edited installed fil
     `xargs grep`, `sed` with a regex address, or `Select-String` after `Get-ChildItem`, `gci`, `dir`, or `ls`) and the filter is
     absent or names `.cs`, `.ts`, `.tsx`, `.js`, or `.jsx`; or the call is a file-name search (the
     Glob tool, `find`, or a listing with `Get-ChildItem`, `gci`, `dir`, or `ls`) and the name
-    pattern has no extension, or names a code extension; a Grep or Glob `path` is inside the repo (a UNC
-    path or a path outside the repo is allowed); `<root>\.codegraph\codegraph.db` exists (the root
-    is the first folder with `.git`, from `cwd` up) and `codegraph.cmd` is on `PATH`; `agent_type`
+    pattern has no extension, or names a code extension; the resolved search path is inside an index
+    (the hook walks up from each path to the nearest `.codegraph\codegraph.db`, and stops at a folder
+    with `.git` and no db; a path outside every index is allowed; a UNC path never reaches the disk);
+    `codegraph.cmd` is on `PATH`; `agent_type`
     is not `git`, `devops`, `pr-reviewer`, `claude-code-guide`, or `statusline-setup`; and the gate of
     this session and agent is closed, or the search is a blocked symbol search (see below).
+  - Path and command rules:
+    - A search of a folder that is an ancestor of the index folder is gated. The hook follows `cd`,
+      `Set-Location`, `sl`, `pushd`, `popd`, and Git Bash `/d/...` paths.
+    - A negated glob (`!...`) is not a filter.
+    - An assignment, a shell keyword, `$(`, `(`, or `{ }` does not hide the search command. The hook
+      skips `xargs` flags, and `xargs grep` counts also with no pipe. A search inside a
+      `ForEach-Object` block uses the filter of the listing before the pipe. PowerShell common value
+      flags such as `-ErrorAction` are not path operands.
+    - The hook checks a comma list and `{a,b}` braces part by part, up to 32 parts. More than 32
+      parts is a code search.
+    - `git ls-files <pathspec>` is a file-name search when the last path part has a wildcard or a
+      dot. A bare folder is allowed. A `:` pathspec is not a name pattern.
   - `sed` rule: a `sed` segment is a search only when its script has a regex address, such as
     `/pattern/p` or `/a/,/b/p`. The pattern is the regex in the first address. `sed` with only
     line-number addresses (`sed -n '10,40p' file`), with `-i` or `--in-place`, or with `-f` is
@@ -161,8 +182,10 @@ the installed copy. The next automatic update overwrites an edited installed fil
     search" in `CLAUDE-TEAM.md`). A Glob that starts with a wildcard, such as `**/*.cs`, is a search.
   - It fails open: an error, a timeout, or a malformed or empty input lets the call run. It only
     denies or prints nothing, and never returns "allow".
-  - Limits: a shell search of a folder outside the repo is still denied. `git -C x grep` is not
-    matched. A dotted name such as `MyApp.Services*` is allowed. A listing with no recursion is
+  - Limits: the `(cd x; ...)` subshell scope and backtick substitution are not modelled. An operand
+    with `$`, `%`, or a backtick uses the directory instead. A mapped network drive is not filtered.
+    The hook checks only the first 20 search paths of a call. It does not check a path after the 20th.
+    `git -C x grep` is not matched. A dotted name such as `MyApp.Services*` is allowed. A listing with no recursion is
     allowed. `Where-Object -like` after a listing is not matched. `find -regex` with a group, such
     as `.*\.(cs|ts)`, is allowed. `awk` and `perl` are not matched. The symbol test is a heuristic
     for the shape of a name, so a symbol in a pattern with regex syntax is not found, and a
