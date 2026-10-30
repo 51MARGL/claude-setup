@@ -33,11 +33,13 @@ Call `codegraph_explore` yourself only when all 3 of these are true:
    before you forward it. A question from the user does not count.
 3. One call is enough.
 
-Run Grep or Glob inline only when all 3 of these are true:
+Run a search inline only when all 3 of these are true:
 
-1. You know the target.
+1. You know the file, or the folder below the repo root, that holds the text. A search over the repo root, a parent folder, or a package cache is a search over many files.
 2. The text is not a symbol name, or the file type is not indexed.
 3. The work is 1 to 3 tool calls.
+
+These conditions apply to the Grep tool, the Glob tool, and a shell search with `grep`, `git grep`, `rg`, `findstr`, `Select-String`, `find`, or a recursive `Get-ChildItem` (`gci`, `dir`, `ls`). They apply also to a text that is not a symbol name, such as a header name or a config key. When an inline search for a location finds nothing, send the search to `Explore`. Do not search again inline. A search that checks that a text is absent ends at the empty result.
 
 A Read of a known `path:line` stays inline.
 
@@ -45,7 +47,6 @@ These sources say to call `codegraph_explore` first:
 
 - The tool description of `codegraph_explore`.
 - The CodeGraph context line.
-- The deny reason of the search guard hook.
 - Items 1 and 6 of "Code search" in `CLAUDE-TEAM.md`.
 
 In the main session, this section overrides them. When the hook denies a search, send the search to
@@ -144,6 +145,18 @@ question. Give one short line for each item in the option `description`, or the 
 
 Why: the question dialog hides the text before it, so "Fix 1-6?" shows numbers with no items.
 
+### Answer a question in a dialog
+
+When a dialog answer is a question, answer it and ask again. Do not act on it.
+
+Why: a question is not a choice, and an action on it can start a change that I did not pick.
+
+### Give a PAT only to devops
+
+Give a PAT from the user only to the `devops` agent. Never call Azure DevOps yourself.
+
+Why: the `devops` agent sends the PAT in one command and never prints or stores it.
+
 ## Mistakes log
 
 These rules apply to the main session only. A subagent ignores this section.
@@ -158,7 +171,7 @@ Write an entry when one of these happens:
 3. A claim that you made was false, such as "the tests pass".
 4. An agent report names a mistake. Only the main session writes the file.
 
-Load the `mistakes-log` skill to write an entry. After you write it, say so in one line:
+Load the `mistakes-log` skill to write an entry. The skill reads only the top lines of the file. After you write it, say so in one line:
 `Logged in MISTAKES.md: <title>`.
 
 Before you start work, run Grep on `MISTAKES.md` for the repository name and for the `Area` field of

@@ -40,9 +40,13 @@ $uncPathPattern = '^(\\\\|//)'
 $xargsValueFlagNames = @('--max-args', '--max-procs', '--delimiter', '--replace', '--max-lines', '--arg-file', '--eof')
 $xargsCaseSensitiveValueFlagNames = @('-I', '-n', '-P', '-d', '-L', '-s', '-E', '-a')
 $gitListFilesValueFlagNames = @('-x', '-X', '--exclude', '--exclude-from', '--exclude-per-directory', '--with-tree', '--format', '--abbrev')
+$gitGlobalValueOptionNames = @('--git-dir', '--work-tree', '--namespace', '--config-env', '--super-prefix')
+$gitGlobalShortFlagNames = @('-p', '-P')
 $powerShellPathFlagPattern = '(?i)^-(pa(t(h)?)?|l(i(t(e(r(a(l(p(a(t(h)?)?)?)?)?)?)?)?)?)?)$'
 $redirectionPattern = '^\d*>|^<'
 $maxNamePatternParts = 32
+$folderFileCountLimit = 5000
+$folderScanMilliseconds = 300
 $maxSearchPaths = 20
 $indexedRootCache = @{}
 $indexHasFilesByRoot = @{}
@@ -192,13 +196,37 @@ function Get-BlockListingWords {
     return @()
 }
 
+function Read-GitGlobalOptions {
+    param([string[]]$Words, [string]$Directory)
+
+    $wordIndex = 1
+    while ($wordIndex -lt $Words.Count) {
+        $word = $Words[$wordIndex]
+        if ($word -ceq '-C' -and $wordIndex + 1 -lt $Words.Count) {
+            $folderText = $Words[$wordIndex + 1]
+            if ($folderText -notmatch '[$%`]') {
+                $resolvedFolder = Resolve-SearchPath -Path $folderText -Directory $Directory
+                $Directory = if ($resolvedFolder) { $resolvedFolder } else { '' }
+            }
+            $wordIndex += 2
+        } elseif ($word -ceq '-c' -or $word -cin $gitGlobalValueOptionNames) {
+            $wordIndex += 2
+        } elseif ($word.StartsWith('--') -or $word -cin $gitGlobalShortFlagNames) {
+            $wordIndex++
+        } else {
+            break
+        }
+    }
+    if ($wordIndex -ge $Words.Count) { return $null }
+    return [pscustomobject]@{ SubcommandIndex = $wordIndex; Directory = $Directory }
+}
+
 function Get-SearchSegmentWords {
     param([object[]]$Segments, [string[]]$SegmentDirectories)
 
     for ($segmentIndex = 0; $segmentIndex -lt $Segments.Count; $segmentIndex++) {
         $words = @(Get-CommandWords -Words $Segments[$segmentIndex].Words)
         $commandName = Get-CommandName $words[0]
-        $nextWord = if ($words.Count -gt 1) { Get-CommandName $words[1] } else { '' }
 
         $isXargsSearch = $commandName -eq 'xargs' -and (Get-XargsCommandName -Words $words) -in 'grep', 'rg'
         if ($isXargsSearch) { return [pscustomobject]@{ Words = $words; PathWords = $words; Directory = $SegmentDirectories[$segmentIndex] } }
@@ -211,16 +239,23 @@ function Get-SearchSegmentWords {
             }
             continue
         }
-        $isGitGrep = $commandName -eq 'git' -and (
-            $nextWord -eq 'grep' -or
-            ($nextWord -eq '-c' -and 3 -lt $words.Count -and (Get-CommandName $words[3]) -eq 'grep'))
+        $segmentDirectory = $SegmentDirectories[$segmentIndex]
+        $isGitGrep = $false
+        if ($commandName -eq 'git') {
+            $gitOptions = Read-GitGlobalOptions -Words $words -Directory $segmentDirectory
+            if ($gitOptions -and $words[$gitOptions.SubcommandIndex] -ceq 'grep') {
+                $isGitGrep = $true
+                $words = @($words[$gitOptions.SubcommandIndex..($words.Count - 1)])
+                $segmentDirectory = $gitOptions.Directory
+            }
+        }
         $isSedSearch = $commandName -eq 'sed' -and $null -ne (Get-SedAddressPattern -Words $words)
         if ($commandName -in $searchCommandNames -or $isGitGrep -or $isSedSearch) {
             $blockListingWords = @(Get-BlockListingWords -Segments $Segments -SegmentIndex $segmentIndex)
             if ($blockListingWords.Count -gt 0) {
                 return [pscustomobject]@{ Words = $blockListingWords + $words; PathWords = $blockListingWords; Directory = $SegmentDirectories[$segmentIndex - 2] }
             }
-            return [pscustomobject]@{ Words = $words; PathWords = $words; Directory = $SegmentDirectories[$segmentIndex] }
+            return [pscustomobject]@{ Words = $words; PathWords = $words; Directory = $segmentDirectory }
         }
     }
     return $null
@@ -241,12 +276,10 @@ function Get-FileNameSearch {
         $isCodeRegexSearch = $false
 
         if ($commandName -eq 'git') {
-            $wordIndex = 1
-            while ($wordIndex -lt $words.Count -and ($words[$wordIndex] -ceq '-C' -or $words[$wordIndex] -ceq '-c' -or $words[$wordIndex].StartsWith('--'))) {
-                if ($words[$wordIndex] -ceq '-C' -and $wordIndex + 1 -lt $words.Count) { $pathOperands.Add($words[$wordIndex + 1]) }
-                $wordIndex += if ($words[$wordIndex].StartsWith('--')) { 1 } else { 2 }
-            }
-            if ($wordIndex -ge $words.Count -or $words[$wordIndex] -cne 'ls-files') { continue }
+            $gitOptions = Read-GitGlobalOptions -Words $words -Directory $directory
+            if (-not $gitOptions -or $words[$gitOptions.SubcommandIndex] -cne 'ls-files') { continue }
+            $directory = $gitOptions.Directory
+            $wordIndex = $gitOptions.SubcommandIndex
             $afterDoubleDash = $false
             for ($wordIndex++; $wordIndex -lt $words.Count; $wordIndex++) {
                 $word = $words[$wordIndex]
@@ -399,6 +432,23 @@ function Test-NamePatternIsCodeSearch {
     return $false
 }
 
+function Test-NamePatternIsFileList {
+    param([string]$NamePattern)
+
+    if ([string]::IsNullOrWhiteSpace($NamePattern)) { return $false }
+    $braceParts = @(Expand-BraceAlternatives -Text $NamePattern)
+    if ($braceParts.Count -gt $maxNamePatternParts) { return $false }
+    $namePatternParts = @($braceParts | ForEach-Object { $_.Split(',') })
+    if ($namePatternParts.Count -gt $maxNamePatternParts) { return $false }
+    foreach ($namePatternPart in $namePatternParts) {
+        if ($namePatternPart.TrimStart().StartsWith('!')) { return $false }
+        $fileName = $namePatternPart -replace '^.*[\\/]', ''
+        if ($fileName -match '[*?\[{}]' -or $fileName -notmatch '[A-Za-z]') { return $false }
+        if ($fileName -notmatch '^[^.].*\.[A-Za-z0-9]+$') { return $false }
+    }
+    return $true
+}
+
 function Test-SingleNamePatternIsCodeSearch {
     param([string]$NamePattern)
 
@@ -422,11 +472,6 @@ function Get-GrepToolFilterValues {
     $filterValues = [System.Collections.Generic.List[string]]::new()
     foreach ($propertyName in 'glob', 'type') {
         Add-FilterValue -FilterValues $filterValues -Value ([string]$ToolInput.$propertyName)
-    }
-    $searchPath = [string]$ToolInput.path
-    if ($searchPath -match '\.[A-Za-z0-9]+$') {
-        $fullPath = Resolve-SearchPath -Path $searchPath -Directory $WorkingDirectory
-        if ($fullPath -and [System.IO.File]::Exists($fullPath)) { $filterValues.Add([System.IO.Path]::GetExtension($fullPath)) }
     }
     return $filterValues.ToArray()
 }
@@ -667,11 +712,61 @@ function Get-IndexedRoot {
     return $indexedRoot
 }
 
+function Test-OperandsAreExistingFiles {
+    param([string[]]$Operands, [string]$Directory)
+
+    if ($Operands.Count -eq 0 -or $Operands.Count -gt $maxSearchPaths) { return $false }
+    foreach ($operand in $Operands) {
+        if ($operand -match '[*?\[{$%`]') { return $false }
+        $resolvedPath = Resolve-SearchPath -Path $operand -Directory $Directory
+        if (-not $resolvedPath -or -not [System.IO.File]::Exists($resolvedPath)) { return $false }
+    }
+    return $true
+}
+
+function Test-FolderHasCodeFiles {
+    param([string]$Path)
+
+    $enumerationOptions = [System.IO.EnumerationOptions]::new()
+    $enumerationOptions.RecurseSubdirectories = $true
+    $enumerationOptions.IgnoreInaccessible = $true
+    $folderStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $fileCount = 0
+    try {
+        foreach ($filePath in [System.IO.Directory]::EnumerateFiles($Path, '*', $enumerationOptions)) {
+            $extensionToken = [System.IO.Path]::GetExtension($filePath).TrimStart('.').ToLowerInvariant()
+            if ($extensionToken -in $codeFilterTokens) { return $true }
+            $fileCount++
+            if ($fileCount -ge $folderFileCountLimit -or $folderStopwatch.ElapsedMilliseconds -ge $folderScanMilliseconds) { return $true }
+        }
+    } catch {
+        return $true
+    }
+    return $false
+}
+
+function Test-FolderBelowIndexHasNoCode {
+    param([string]$Path)
+
+    if (-not [System.IO.Directory]::Exists($Path)) { return $false }
+    $level = [System.IO.Path]::GetDirectoryName($Path)
+    while ($level) {
+        if ([System.IO.File]::Exists([System.IO.Path]::Combine($level, '.codegraph', 'codegraph.db'))) {
+            return -not (Test-FolderHasCodeFiles -Path $Path)
+        }
+        $gitPath = [System.IO.Path]::Combine($level, '.git')
+        if ([System.IO.Directory]::Exists($gitPath) -or [System.IO.File]::Exists($gitPath)) { return $false }
+        $level = [System.IO.Path]::GetDirectoryName($level)
+    }
+    return $false
+}
+
 function Test-SearchReachesIndex {
     param([string[]]$SearchPaths, [string]$WorkingDirectory)
 
     $workingRoot = Get-IndexedRoot -Path $WorkingDirectory
     foreach ($searchPath in ($SearchPaths | Select-Object -First $maxSearchPaths)) {
+        if (Test-FolderBelowIndexHasNoCode -Path $searchPath) { continue }
         if (Get-IndexedRoot -Path $searchPath) { return $true }
         if ($workingRoot -and $workingRoot.StartsWith($searchPath.TrimEnd('\') + '\', [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
     }
@@ -712,10 +807,20 @@ function Get-SymbolNames {
         $name = $alternative -replace '\\b|\\<|\\>', '' -replace '^\^|\$$', '' -replace '^\\\.', '' -replace '(\\\(|\()$', ''
         if ($name -notmatch '^[A-Za-z_][A-Za-z0-9_]*$' -or $name.Length -lt $symbolMinimumLength) { return @() }
         $hasMixedCase = $name -cmatch '[a-z]' -and $name -cmatch '[A-Z]'
-        if (-not ($hasMixedCase -or $name -match '[A-Za-z]_[A-Za-z]')) { return @() }
+        if (-not ($hasMixedCase -or ($name -cmatch '[a-z]' -and $name -match '[A-Za-z]_[A-Za-z]'))) { return @() }
         if ($name -cnotin $symbolNames) { $symbolNames.Add($name) }
     }
     return $symbolNames.ToArray()
+}
+
+function Test-ConfigKeyPattern {
+    param([string]$Pattern)
+
+    foreach ($alternative in ($Pattern -split '\\\||\|')) {
+        $name = $alternative -replace '\\b|\\<|\\>', '' -replace '^\^|\$$', '' -replace '^\\\.', '' -replace '(\\\(|\()$', ''
+        if ($name -cnotmatch '^[A-Z][A-Z0-9]*(_[A-Z0-9]+)+$') { return $false }
+    }
+    return $true
 }
 
 function Get-SafeName {
@@ -772,12 +877,15 @@ try {
     $contentPattern = $null
     if ($toolName -eq 'Grep') {
         $contentPattern = [string]$toolInput.pattern
+        if (Test-NamePatternIsFileList -NamePattern ([string]$toolInput.glob)) { exit 0 }
+        if (Test-OperandsAreExistingFiles -Operands @([string]$toolInput.path | Where-Object { $_ }) -Directory $workingDirectory) { exit 0 }
         $filterValues = Get-GrepToolFilterValues -ToolInput $toolInput -WorkingDirectory $workingDirectory
         if (-not (Test-FiltersAllowCode -FilterValues $filterValues)) { exit 0 }
         $searchPaths = @(Resolve-OperandPaths -Operands @([string]$toolInput.path | Where-Object { $_ }) -Directory $workingDirectory)
         $searchCommandWord = 'Grep'
     } elseif ($toolName -eq 'Glob') {
         $globPattern = [string]$toolInput.pattern
+        if (Test-NamePatternIsFileList -NamePattern $globPattern) { exit 0 }
         if (Test-NamePatternStartsWithClassName -NamePattern $globPattern) { exit 0 }
         if (-not (Test-NamePatternIsCodeSearch -NamePattern $globPattern)) { exit 0 }
         $searchPaths = @(Resolve-OperandPaths -Operands @([string]$toolInput.path | Where-Object { $_ }) -Directory $workingDirectory)
@@ -797,6 +905,7 @@ try {
                 if (-not $searchCommandWord) { $searchCommandWord = 'search' }
                 $contentPattern = Get-ShellSearchPattern -Words $searchWords
                 $pathOperands = @(Get-ShellSearchPathOperands -Words $contentSearch.PathWords)
+                if (Test-OperandsAreExistingFiles -Operands $pathOperands -Directory $contentSearch.Directory) { exit 0 }
                 $searchPaths = @(Resolve-OperandPaths -Operands $pathOperands -Directory $contentSearch.Directory)
             }
         }
@@ -814,6 +923,7 @@ try {
     if (-not (Get-Command codegraph.cmd -CommandType Application -ErrorAction SilentlyContinue)) { exit 0 }
     if (-not (Test-SearchReachesIndex -SearchPaths $searchPaths -WorkingDirectory $workingDirectory)) { exit 0 }
 
+    if ($contentPattern -and (Test-ConfigKeyPattern -Pattern $contentPattern)) { exit 0 }
     $symbolNames = if ($contentPattern) { @(Get-SymbolNames -Pattern $contentPattern) } else { @() }
     $blockedSymbolNames = $symbolNames
     if (Test-Path -LiteralPath $openMarkerPath) {
@@ -843,13 +953,23 @@ try {
     $logWord = if ($isSymbolDeny) { "$searchCommandWord symbol" } else { $searchCommandWord }
     Write-GuardLog 'INFO' ('Denied {0} for agent type "{1}": {2}' -f $toolName, $agentType, $logWord)
 
-    $denyReason = 'This repo has a CodeGraph index. Call the `codegraph_explore` tool first to find a symbol, its callers, or its usages. If the tool is deferred, load it with ToolSearch `select:mcp__codegraph__codegraph_explore`. Do not repeat the blocked search with Glob, find, Get-ChildItem, or another tool.'
-    if ($isSymbolDeny) {
-        $denyReason += " This hook blocked a search for these symbol names: $($blockedSymbolNames -join ', '). Call ``codegraph_explore`` with these names. Add the file names when you know them. After one CodeGraph call, a search for the same names runs."
-        $denyReason += if ($remainingDenies -gt 0) { " After $remainingDenies more blocked symbol searches, this hook lets the next symbol search run." } else { ' This hook lets the next symbol search run.' }
+    if ($agentType -eq 'Explore') {
+        $denyReason = 'This repo has a CodeGraph index. Call the `codegraph_explore` tool first to find a symbol, its callers, or its usages. If the tool is deferred, load it with ToolSearch `select:mcp__codegraph__codegraph_explore`. Do not repeat the blocked search with Glob, find, Get-ChildItem, or another tool.'
+        if ($isSymbolDeny) {
+            $denyReason += " This hook blocked a search for these symbol names: $($blockedSymbolNames -join ', '). Call ``codegraph_explore`` with these names. Add the file names when you know them. After one CodeGraph call, a search for the same names runs."
+            $denyReason += if ($remainingDenies -gt 0) { " After $remainingDenies more blocked symbol searches, this hook lets the next symbol search run." } else { ' This hook lets the next symbol search run.' }
+        } else {
+            $denyReason += ' After one CodeGraph call, this hook lets a search for text that is not a symbol name run. A search for a symbol name runs only after a CodeGraph call for that name.'
+            $denyReason += if ($remainingDenies -gt 0) { " After $remainingDenies more blocked searches, this hook lets all searches run." } else { ' This hook lets the next search run.' }
+        }
     } else {
-        $denyReason += ' After one CodeGraph call, this hook lets a search for text that is not a symbol name run. A search for a symbol name runs only after a CodeGraph call for that name.'
-        $denyReason += if ($remainingDenies -gt 0) { " After $remainingDenies more blocked searches, this hook lets all searches run." } else { ' This hook lets the next search run.' }
+        $denyReason = 'This repo has a CodeGraph index. Send this search to the `Explore` agent with the `Agent` tool. Do not call `codegraph_explore` and then repeat the search. Do not repeat the blocked search with Glob, find, Get-ChildItem, or another tool.'
+        if ($isSymbolDeny) {
+            $denyReason += " Give these symbol names to ``Explore``: $($blockedSymbolNames -join ', ')."
+            $denyReason += if ($remainingDenies -gt 0) { " After $remainingDenies more blocked symbol searches, this hook lets the next symbol search run." } else { ' This hook lets the next symbol search run.' }
+        } else {
+            $denyReason += if ($remainingDenies -gt 0) { " After $remainingDenies more blocked searches, this hook lets all searches run." } else { ' This hook lets the next search run.' }
+        }
     }
     $hookOutput = @{
         hookSpecificOutput = @{

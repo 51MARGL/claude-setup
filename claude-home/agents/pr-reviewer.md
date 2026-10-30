@@ -4,6 +4,8 @@ description: Review a Azure DevOps pull request from a URL or a number. Runs the
 tools: Agent, PowerShell, Bash, Read, Grep, Glob
 model: sonnet
 effort: medium
+experimental:
+  cacheTtl: 5m
 omitClaudeMd: true
 ---
 

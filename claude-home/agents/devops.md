@@ -4,6 +4,8 @@ description: Use for Azure DevOps operations on work items, fields, pull request
 tools: PowerShell, Read, Grep, Glob
 model: haiku
 effort: low
+experimental:
+  cacheTtl: 5m
 omitClaudeMd: true
 ---
 

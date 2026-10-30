@@ -11,10 +11,11 @@
      `shared-steps.md`. Record them only when "The system-wide impact check" in `shared-steps.md`
      fires on the planned change. No diff exists yet, so decide from the `architect` and `Explore`
      output.
-4. `planner` — plan the change. Give it the `architect` note, the `Explore` caller map, and the
+4. `planner` — plan the change. Give it the path of `design-note.md`, the `Explore` caller map, and the
    baseline counts from step 3.
 5. The plan-confirm stop. See "The plan-confirm stop" in `orchestrate.md`.
-6. Implementer — make the change with no behaviour change.
+6. Implementer — make the change with no behaviour change. Run one implementer for each chunk
+   file, in order. Run `git status` before and after each chunk.
 7. `tester` — the test step. Run the covering tests from step 3. The counts must match the
    covering-test baseline.
 8. The review step: `reviewer`, with each `Focus:` line that a guard adds. See "The guards" in

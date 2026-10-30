@@ -56,6 +56,14 @@ $sensitivePaths = @(
     'claude-home/orchestrate/review.md',
     'claude-home/orchestrate/custom.md',
     'claude-home/orchestrate/shared-steps.md',
+    'claude-home/orchestrate/agent-reviewer-security.md',
+    'claude-home/orchestrate/agent-reviewer-migration.md',
+    'claude-home/orchestrate/agent-tester-browser-check.md',
+    'claude-home/orchestrate/resolve-reference.md',
+    'claude-home/orchestrate/findings-rules.md',
+    'claude-home/orchestrate/after-compact.md',
+    'claude-home/orchestrate/final-report.md',
+    'claude-home/orchestrate/effort.md',
     'claude-home/output-styles/audhd.md',
     'claude-home/skills/mistakes-log/SKILL.md',
     'claude-home/skills/strategic-compact/SKILL.md',
@@ -265,7 +273,7 @@ function Install-CodeGraph {
     try {
         if (-not (Test-CodeGraphTryAllowed)) { return $null }
 
-        $npmCommand = Get-Command npm.cmd -CommandType Application -ErrorAction SilentlyContinue
+        $npmCommand = Get-Command npm.cmd -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
         if (-not $npmCommand) {
             Set-CodeGraphTryRecord
             return "CodeGraph is not installed, so the codegraph MCP server and the repo index do not work. Run: npm i -g $codeGraphPackage@latest. Install Node.js 18 or later first if npm is missing. Then restart Claude Code."
@@ -337,7 +345,7 @@ function Update-TeamSetup {
         return
     }
 
-    $gitCommand = Get-Command git -ErrorAction SilentlyContinue
+    $gitCommand = Get-Command git -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $gitCommand) {
         Write-UpdateLog 'WARN' 'git was not found on PATH.'
         return
