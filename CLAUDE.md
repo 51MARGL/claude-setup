@@ -30,6 +30,9 @@ $errors = $null; [System.Management.Automation.Language.Parser]::ParseFile("$PWD
 
 # Install from this clone into your own %USERPROFILE%\.claude
 .\install.ps1
+
+# Check the size of orchestrate.md (18,500 or less)
+(Get-Content -Raw claude-home\commands\orchestrate.md).Length
 ```
 
 `install.ps1` and `update.ps1` need PowerShell 7.2.
@@ -71,6 +74,23 @@ the installed copy. The next automatic update overwrites an edited installed fil
   skips with a warning when the definition differs or `.claude.json` is not readable. Any other
   changed entry reaches a machine only after the user runs `claude mcp remove <name> --scope user`
   and `install.ps1` again.
+  When `claude` is not on `PATH` (a user with only Claude Desktop), `Write-ClaudeConfigMcpServers`
+  writes the missing servers into the top-level `mcpServers` of `%USERPROFILE%\.claude.json`. It uses
+  `System.Text.Json.Nodes`, so the key order and all other values stay. The shapes are the CLI
+  shapes: `http` has `type` and `url`, `stdio` has `type`, `command`, `args`, and an empty `env`, and
+  an `alwaysLoad` entry has the `servers.json` keys and no `env`. It never creates `.claude.json`. It
+  warns and writes nothing when the file is missing, empty, or invalid, or when `mcpServers` is not an
+  object. It never changes an existing server, with the same `alwaysLoad` exception as the CLI path:
+  it sets `"alwaysLoad": true` in place. A different definition gives a warning that tells the user
+  to delete the entry from `.claude.json`. The write copies the file to
+  `%USERPROFILE%\.claude.json.bak`, writes `.claude.json.team-setup.tmp`, and reads the file again. When the text
+  changed, it merges once more, and it skips with a warning when the file changes a second time. Then
+  it runs `Move-Item -Force`. The output has LF line ends, no BOM, and the final newline of the old
+  file. An IO error warns in a saved-switches run and throws in a manual run. `-WhatIf` writes
+  nothing. Known and accepted: the move replaces a symbolic link at `.claude.json` with a regular
+  file, a ReadOnly attribute does not stop the write, and a running Claude Code process can write
+  its old copy back. The next run adds the servers again.
+  `Get-Command` for `npm.cmd`, `claude`, and `git` takes the first match when `PATH` has two.
   Before it adds the servers, `Install-CodeGraph` in `install.ps1` runs
   `npm.cmd i -g @colbymchenry/codegraph@latest` in a manual run only. A saved-switches run of
   `install.ps1` (the auto-update) runs no npm and prints a warning, and then `update.ps1` installs
@@ -130,6 +150,10 @@ the installed copy. The next automatic update overwrites an edited installed fil
   - Path and command rules:
     - A search of a folder that is an ancestor of the index folder is gated. The hook follows `cd`,
       `Set-Location`, `sl`, `pushd`, `popd`, and Git Bash `/d/...` paths.
+    - The hook uses the folder of `git -C <path>` for `git grep` and `git ls-files`. Several `-C`
+      combine as in git. Before the subcommand, it skips `-c <k=v>`, and `--git-dir`, `--work-tree`,
+      `--namespace`, `--config-env`, `--super-prefix` with their value, and `-p`, `-P`, and each
+      other `--` option as one word. Any other option with one dash stops the match.
     - A negated glob (`!...`) is not a filter.
     - An assignment, a shell keyword, `$(`, `(`, or `{ }` does not hide the search command. The hook
       skips `xargs` flags, and `xargs grep` counts also with no pipe. A search inside a
@@ -160,13 +184,31 @@ the installed copy. The next automatic update overwrites an edited installed fil
     the `sed` address regex). It strips `\b`, `\<`, `\>`, `^`, `$`, a trailing `(` or `\(`, and a
     leading `\.` from each alternative (split on `|` and `\|`). The pattern is a symbol pattern when
     each alternative is an identifier of at least 4 characters that is camelCase or PascalCase, or
-    has `_` between letters. A plain word such as `error` is not a symbol pattern. When the gate is
+    has `_` between letters and at least one lowercase letter. A plain word such as `error`, and an
+    UPPER_SNAKE name such as `CHECK_CLIENT`, is not a symbol pattern. When the gate is
     open, the hook denies a symbol search, with two exceptions:
     - (a) Each symbol name was in an earlier symbol deny of this gate key, and a `codegraph_explore`
       call ran after that deny. A symbol that CodeGraph cannot find can be searched after one try.
     - (b) 1 symbol deny ran with no `codegraph_explore` call after it. The next symbol search runs.
     A symbol search with a closed gate follows the normal closed-gate rule (the 1-deny rule). The deny
     also records the names, so exception (a) applies after the next `codegraph_explore` call.
+  - Allowed searches (the hook exits with no deny, also with a closed gate):
+    - A file list: a Grep `glob` or a Glob `pattern` where each name (after brace expansion and a
+      split on `,`, up to 32 parts) has no `*`, `?`, `[`, `{`, or `}` in the file-name part, has a
+      letter, and has an extension, such as `SasCryptoUtils.cs` or `{A,B}.cs`. A name that starts
+      with `!` is not a file list. A `**/` folder prefix is allowed. A Grep with `path` of one existing file is allowed, and the file extension is not
+      used as a filter. A shell `grep` or `rg` is allowed when every path operand is an existing
+      file (1 to 20 operands, none with `*`, `?`, `[`, `{`, `$`, `%`, or a backtick).
+    - A folder with no code file: a search path that is a directory below an indexed root (not the
+      root, not a folder above it) and holds no `.cs`, `.ts`, `.tsx`, `.js`, or `.jsx` file does not
+      reach the index. The check walks up to the index and stops at a `.git` folder or file. It
+      scans the folder before the status call, so it starts no node process. At 5,000 files or
+      300 ms it counts the folder as code. An error counts as code.
+    - A config key: a content pattern where each alternative matches
+      `^[A-Z][A-Z0-9]*(_[A-Z0-9]+)+$` (the strip rules of the symbol rule apply), such as
+      `CHECK_CLIENT_CERTIFICATE`. CodeGraph does not index JSON, YAML, or environment keys. The
+      check runs after the index check. `CHECK_CLIENT|FooBar` is not a config key, and it is not a
+      symbol pattern.
   - `post`: a `PostToolUse` hook (matcher `mcp__codegraph__codegraph_explore`, timeout 10) in the
     same array as the `Agent|Task` strategic-compact hook. It writes the `.open` marker, also when
     CodeGraph returns an error text. It also moves the names from `.symbols-denied` to
@@ -179,11 +221,17 @@ the installed copy. The next automatic update overwrites an edited installed fil
     `%USERPROFILE%\.claude\team-setup\codegraph-search-guard.log` (1 MB rotation). It has one line
     for each deny, with only the tool name, the agent type, and the search command word. A symbol
     deny adds the word `symbol`. The log has no pattern and no symbol name.
-    The deny reason also tells the agent not to repeat the search with another tool. A symbol deny
-    names the blocked symbols in the deny reason.
+    The deny reason also tells the agent not to repeat the search with another tool. It depends on
+    the agent type. For the type `Explore`, it tells the agent to call `codegraph_explore` (the 3
+    shared sentences of item 16), and a symbol deny names the blocked symbols and says that a search
+    for the same names runs after one CodeGraph call. For every other type, also an empty type (the
+    main session), it tells the agent to send the search to `Explore` with the `Agent` tool and not
+    to call `codegraph_explore` and then repeat the search. A symbol deny gives the blocked symbol
+    names to `Explore`. Why: a call to `codegraph_explore` by an agent that is not `Explore` filled
+    its context with source, and then the agent ran the same search.
   - Accepted cost: the rule in "Send code questions and searches to Explore" tells a subagent not to
     call `codegraph_explore` only to open the gate. In a subagent, a closed gate can still deny the
-    first inline Grep or Glob code search once.
+    first inline code search once (Grep, Glob, or a shell search).
   - File-name search rules: `find` counts its `-name`, `-iname`, `-path`, `-ipath`, `-wholename`, and
     `-iwholename` values. It counts `-path` only with a wildcard, and `-regex` only with a code
     extension. A listing counts its `-Filter`, `-Include`, and wildcard values, and only with
@@ -198,11 +246,14 @@ the installed copy. The next automatic update overwrites an edited installed fil
   - Limits: the `(cd x; ...)` subshell scope and backtick substitution are not modelled. An operand
     with `$`, `%`, or a backtick uses the directory instead. A mapped network drive is not filtered.
     The hook checks only the first 20 search paths of a call. It does not check a path after the 20th.
-    `git -C x grep` is not matched. A dotted name such as `MyApp.Services*` is allowed. A listing with no recursion is
+    `--git-dir` and `--work-tree` do not change the search folder. `--attr-source <tree-ish>` is
+    skipped without its value, so the value hides the subcommand and the search is not matched. A dotted name such as `MyApp.Services*` is allowed. A listing with no recursion is
     allowed. `Where-Object -like` after a listing is not matched. `find -regex` with a group, such
     as `.*\.(cs|ts)`, is allowed. `awk` and `perl` are not matched. The symbol test is a heuristic
     for the shape of a name, so a symbol in a pattern with regex syntax is not found, and a
-    camelCase word that is not a symbol is blocked. The deny count is not atomic. Each Grep, Glob, Bash, and PowerShell
+    camelCase word that is not a symbol is blocked. The no-code folder check counts a folder as code
+    after 5,000 files or 300 ms. The file-list and shell-operand exceptions need a file that exists
+    now. A name that does not exist yet is searched as usual. The deny count is not atomic. Each Grep, Glob, Bash, and PowerShell
     call starts `pwsh` once (about 1 s), also for a command that is not a search. A search that
     reaches an index costs about 2 s more, because the status call starts node. A repo path with a
     space or one of the characters in "Index check" gets no guard. The hook has no opt-out.
@@ -224,10 +275,15 @@ the installed copy. The next automatic update overwrites an edited installed fil
   when `<root>\.codegraph\codegraph.db` exists and `codegraph.cmd` is on `PATH`.
 - **`orchestrate\`**: copied. It holds one file for each `/orchestrate` workflow and
   `shared-steps.md`. Step 0 of `commands\orchestrate.md` reads only the files of the chosen
-  workflow. The folder is not under `commands\`, because each file there is a slash command.
+  workflow. The folder also holds 5 rules files that the main session reads on demand:
+  `resolve-reference.md`, `findings-rules.md`, `after-compact.md`, `final-report.md`, and
+  `effort.md`. The text of these sections lives there, because `orchestrate.md` must stay under the
+  cut of 20,000 characters (see "Writing rules"). The folder also holds 3 `agent-*.md` files that
+  `reviewer` (security and migration focus) and `tester` (browser check) read on demand. The folder
+  is not under `commands\`, because each file there is a slash command.
 
 `update.ps1` names a file in its message when a new commit changes it (`$sensitivePaths`). The list
-has 40 paths in 3 groups:
+has 48 paths in 3 groups:
 
 1. The files that run code: `install.ps1`, `update.ps1`, `claude-home/hooks/main-session-rules.ps1`,
    `claude-home/hooks/notify.ps1`, `claude-home/hooks/codegraph-init.ps1`, `claude-home/hooks/codegraph-search-guard.ps1`,
@@ -236,7 +292,7 @@ has 40 paths in 3 groups:
 2. The files that set permissions, hooks, tools, or the model: `claude-home/settings.json`,
    `mcp/servers.json`, and the 15 agent files `claude-home/agents/<name>.md`.
 3. The rules that the main session loads or follows: `claude-home/CLAUDE-TEAM.md`,
-   `claude-home/CLAUDE-MAIN.md`, `claude-home/STE.md`, `claude-home/commands/orchestrate.md`, the 8
+   `claude-home/CLAUDE-MAIN.md`, `claude-home/STE.md`, `claude-home/commands/orchestrate.md`, the 16
    files `claude-home/orchestrate/<name>.md`, `claude-home/output-styles/audhd.md`,
    `claude-home/skills/mistakes-log/SKILL.md`, and `claude-home/skills/strategic-compact/SKILL.md`.
 
@@ -256,8 +312,9 @@ Several files hold the same fact. When you change one, change the others in the 
    Keep the two texts identical.
 3. **The list of tasks that need no agent chain**: only in `claude-home\CLAUDE-MAIN.md`
    ("Orchestrate multi-step work yourself"). `orchestrate.md` points to it. Do not copy it.
-4. **Rules from `MISTAKES.md`**: the PowerShell alias ban, the line-endings rule, and the task-scope
-   rule are in several agent files (`dotnet-developer`, `frontend-developer`,
+4. **Rules from `MISTAKES.md`**: the PowerShell alias ban, the line-endings rule, the task-scope
+   rule, and the delete rule (`git rm` for a tracked file, `Remove-Item` only for an untracked file,
+   alone in its own call, as the last step) are in several agent files (`dotnet-developer`, `frontend-developer`,
    `powershell-developer`, `container-developer`, `markdown-developer`, `tester`, `docs-updater`).
 5. **The workflow chains**: the workflow files in `claude-home\orchestrate\` and the "Use
    `/orchestrate`" table in `README.md`.
@@ -275,7 +332,10 @@ Several files hold the same fact. When you change one, change the others in the 
    scope) in the same folder, `tester.md`, and `README.md`. The system-wide impact criteria are
    only in `shared-steps.md` ("The system-wide impact check"). `tester.md` and `README.md` point
    to it. Do not copy them. The rule that skips the test step, the browser check step, and the
-   final suite run for a Markdown-only diff is in `shared-steps.md` and `README.md`.
+   final suite run for a Markdown-only diff is in `shared-steps.md` and `README.md`. The
+   `plan-test.md` rule is in `shared-steps.md` (test step items 3 and 6) and `tester.md` (start step 5
+   and the "Tests" report item). The test step sends a planned test with no report entry back to
+   `tester` once. Keep the entry forms (`file:line`, "covered by", "skipped:") the same.
 10. **The toast text** "Waiting for agents. Nothing needed from you now.": `orchestrate.md`,
     `README.md`, and `notify.ps1` (`$waitLine`).
 11. **The `CLAUDE.md` read step**: the text "The root `CLAUDE.md` of the working directory is already
@@ -289,25 +349,35 @@ Several files hold the same fact. When you change one, change the others in the 
     update hook in `claude-home\settings.json`. The time guard of `Install-CodeGraph` uses the value.
 14. **The code-search rule**: "Code search" in `claude-home\CLAUDE-TEAM.md` and "How to search" in
     `claude-home\agents\explore.md`. Keep the same terms, the same list of file types, the ToolSearch
-    step, the symbol check before a Grep, and the Read exception.
+    step, the symbol check before a Grep, the Read exception, and the rule to treat the source that
+    `codegraph_explore` returned as read (item 8 in both files, word for word).
 15. **The agents with the CodeGraph tool**: the `tools:` line of `architect`, `planner`,
-    `reviewer`, `docs-updater`, `tester`, and `explore` has `mcp__codegraph__codegraph_explore`. The 4 developer agents have all
-    tools. `git`, `devops`, `pr-reviewer`, and `explore-web` do not get it. The `tools:` line of
-    `pr-reviewer` and of the 5 agents with the CodeGraph tool, except `explore`, has `Agent`. The
-    developer agents have it through all tools. `markdown-developer` lists `Agent` and does not
-    list the CodeGraph tool. The limit to the `Explore` agent is a prompt rule
-    only, because Claude Code ignores `Agent(Explore)` in the `tools:` line of a subagent. Keep this
+    `reviewer`, `docs-updater`, `tester`, `explore`, and the 4 developer agents (`dotnet-developer`,
+    `frontend-developer`, `powershell-developer`, `container-developer`) has
+    `mcp__codegraph__codegraph_explore`. `git`, `devops`, `pr-reviewer`, `markdown-developer`, and
+    `explore-web` do not get it. The `tools:` line of `pr-reviewer`, `markdown-developer`, and the 9
+    agents with the CodeGraph tool, except `explore`, has `Agent`. Every agent file has a `tools:`
+    line. An agent with no `tools:` line gets all tools, a skill list, and a deferred-tool list.
+    Its start context is much larger. The limit to the `Explore` agent is a prompt rule only.
+    Claude Code ignores `Agent(Explore)` in the `tools:` line of a subagent. Keep this
     list the same in `README.md` ("MCP servers").
 16. **The CodeGraph context line** ("This repo has a CodeGraph index. Call the `codegraph_explore`
     tool first ..."): `main-session-rules.ps1` and `codegraph-init.ps1`. Keep the two texts
     identical. The line has 5 sentences: 3 shared sentences and 2 sentences that send code questions
-    to `Explore`. The deny reason in `codegraph-search-guard.ps1` has only the 3 shared sentences.
+    to `Explore`. The deny reason in `codegraph-search-guard.ps1` has only the 3 shared sentences,
+    and only for the agent type `Explore`. Every other agent type, also the main session, gets a
+    deny reason that sends the search to `Explore`.
 17. **The `Explore` routing rule**: the section "Send code questions and searches to Explore" in
     `claude-home\CLAUDE-MAIN.md` (main session) and in `claude-home\CLAUDE-TEAM.md` (subagents).
-    Keep the same source list, the override sentence, the path sentence, the Grep and Glob
+    Keep the same source list (it has no deny reason, because the guard sends every agent type
+    except `Explore` to `Explore`), the override sentence, the path sentence, the Grep and Glob
     conditions, and the `sonnet` or `haiku` rule. The `Model policy` row of `orchestrate.md` has the
     `sonnet` rule too. The `codegraph_explore` conditions differ on purpose: the subagent text is
-    wider (1 to 3 named symbols, 1 or 2 calls).
+    wider (1 to 3 named symbols, 1 or 2 calls). The inline search conditions (the folder below the
+    repo root, 1 to 3 tool calls, the shell search forms, the rule to send an empty result to
+    `Explore`) are the same in both files. The wait rule after an `Explore` start is only in
+    `CLAUDE-TEAM.md`. The main session waits by the rule in `orchestrate.md` ("When you end a turn
+    only to wait for a background agent"). It does no search of its own that `Explore` can duplicate.
 18. **The output switches**: `dotnet-developer`, `frontend-developer`, `powershell-developer`, and
     `tester` use the same switches for the same tool (`-v:minimal -nologo -clp:NoSummary`,
     `--silent`, `tsc --pretty false`).
@@ -315,9 +385,12 @@ Several files hold the same fact. When you change one, change the others in the 
     the 4 developer files. Its items match "Never report" and the conventions checks in
     `reviewer.md`. `markdown-developer` has its own self-check list for Markdown.
 20. **The plan sections**: the top-level headings in the "Plan format" of `planner.md` and the split
-    rule in "The plan-confirm stop" of `orchestrate.md`.
+    rule in "The plan-confirm stop" of `orchestrate.md`. The chunk headings under `## For the
+    implementer` and the file names `plan-implement.md` and `plan-implement-<n>.md` are the same in
+    both files.
 21. **The compact gates and `findings.md`**: the gate letters A to D and `findings.md` are in
-    "Compact gates" and "Before you ask about findings" of `orchestrate.md`. `shared-steps.md` (the
+    "Compact gates" of `orchestrate.md`, in `claude-home\orchestrate\after-compact.md`, and in
+    `claude-home\orchestrate\findings-rules.md` ("Before you ask about findings"). `shared-steps.md` (the
     fix pass, "After each fix pass"), `test.md` (only gate C and gate D apply), and the
     "What /orchestrate does" text of `README.md` use them. Keep the gate letters, the single block,
     and the rule that a fix pass has no limit the same.
@@ -325,6 +398,11 @@ Several files hold the same fact. When you change one, change the others in the 
     `container-developer`, and `markdown-developer` are in `feature.md`, `planner.md`, `README.md`,
     and the "implementer agents" row of the "Model policy" table in `orchestrate.md`. Keep the five
     names the same.
+23. **The `New to the repo:` mark**: the definition is only in "Mark what is new to the repository"
+    in `claude-home\CLAUDE-TEAM.md`. The **New to the repo** report item is identical in the 5
+    implementer files and `tester.md`. `planner.md` (the plan `## Summary`, the `plan-implement`
+    files, and the return), `orchestrate.md` (plan-confirm step 4 and the `state.md` item list), and
+    `final-report.md` use the same mark. Do not copy the definition.
 
 ## Writing rules for this repository
 
@@ -334,11 +412,22 @@ Several files hold the same fact. When you change one, change the others in the 
   for each rule ("CT rule N").
 - Keep CRLF line endings. The repository has no `.editorconfig`. On Windows, `sed -i` in Git Bash
   changes CRLF to LF, so use the Edit tool.
-- An agent file starts with frontmatter: `name`, `description` (with the trigger words), `tools`
-  when the agent is limited, and `model`.
+- An agent file starts with frontmatter: `name`, `description` (with the trigger words), `tools`,
+  `model`, `effort`, and `experimental.cacheTtl`. The team default is `5m`. Why `cacheTtl`: a gap of
+  more than 5 minutes occurs in about 1.5% of subagent turns. A 1-hour cache write costs 2x, against
+  1.25x for 5 minutes. The 5 implementers (`dotnet-developer`, `frontend-developer`,
+  `powershell-developer`, `container-developer`, `markdown-developer`), `tester`, and `reviewer` use
+  `1h`. Why: a long command in these agents (an EF migration of 7 minutes, a SQL generation of
+  5 minutes) makes a 5-minute cache expire, and the re-write of a large context costs more than the
+  2x price of a 1-hour write. The field needs Claude Code v2.1.248 or later. It overrides `ENABLE_PROMPT_CACHING_1H`.
+  The setting `subagentPromptCacheTtl` and the variable `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL`
+  override it. The team sets no settings key for it.
 - An agent file with the name of a built-in agent (`Explore`) overrides that built-in agent in every
   session.
 - The `git` agent never adds a `Co-Authored-By:` line or any other AI attribution line to a commit
   message.
 - `MISTAKES.md` belongs to each user and is not in this repository. A rule from it goes into
   `CLAUDE-TEAM.md`, `CLAUDE-MAIN.md`, or an agent file here, through a pull request.
+- Keep `claude-home\commands\orchestrate.md` at 18,500 characters or less. Why: after a compact,
+  Claude Code injects the skill again and cuts it at 20,000 characters. Move a rarely used section
+  to a file in `claude-home\orchestrate\` and add its path to `$sensitivePaths`.

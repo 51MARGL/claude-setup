@@ -51,11 +51,15 @@ Run it after an implementer, before the review step that follows.
    `plan-test.md` when `planner` made one.
 2. Tell it to edit test files only.
 3. Tell it to look for an existing test of each behaviour first, and to extend that test. Tell it
-   to write one test for each behaviour in the list.
+   to write one test for each behaviour in the list. Tell it to write each test that `plan-test.md`
+   names, or to report it as covered or skipped with the reason.
 4. Tell it to run the new tests and the tests that cover the change. It never runs the full suite.
    Tell it to use a test filter and quiet switches. See `tester`, "Keep test output small".
 5. Put its counts (passed, failed, skipped) in the step block.
-6. If a test fails because of production code, send the failure to the implementer, then run the
+6. When `planner` made `plan-test.md`, compare the Tests list of the report with it.
+   Send each planned test with no entry back to `tester` once, in the same test step.
+   Put each planned test that still has no entry into the final report as a non-blocking finding.
+7. If a test fails because of production code, send the failure to the implementer, then run the
    test step again. See [After each fix pass](#after-each-fix-pass).
 
 If `planner` or `tester` reported that the repository has no tests, skip each later test step and
@@ -119,7 +123,7 @@ step, the review step, and the final suite run.
 
 Read the findings from `<scratchpad>\orchestrate\findings.md`, not from the context. Each handoff to
 an implementer or `tester` in a fix pass names the path of `findings.md`, the round, and the finding
-rows that the agent must fix. See "Before you ask about findings" in `orchestrate.md`.
+rows that the agent must fix. See `~/.claude/orchestrate/findings-rules.md`.
 
 A review step can return two kinds of findings. Route each finding to its owner:
 
@@ -157,7 +161,7 @@ After the final suite run, the `HUNT` pass on the new diff takes the place of th
 
 When one condition is true, do these steps in order:
 
-1. Write the new round to `findings.md`. See "Before you ask about findings" in `orchestrate.md`.
+1. Write the new round to `findings.md`. See `~/.claude/orchestrate/findings-rules.md`.
 2. Print the findings table.
 3. Ask the user with AskUserQuestion: run another fix pass, or stop the chain. Put the open
    findings into the question. See "Put the items into the question" in `CLAUDE-MAIN.md`.

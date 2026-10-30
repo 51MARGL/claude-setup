@@ -34,6 +34,7 @@ Why: the team writes effort in MD in all effort fields.
    4. If the result has no file whose name matches the class, the query was wrong. Do not read the result. Go back to step 2.
 6. When a hook blocks a search, do what the hook says before any other search. Do not repeat the search with another tool.
 7. A Read of a file that you already know is not a search. The code-search rules do not apply to it.
+8. Treat the source that `codegraph_explore` returned as read. Do not read those lines again.
 
 Why: CodeGraph returns a symbol and its callers in one call. Grep returns many lines that you must read, and these lines use more tokens.
 
@@ -55,10 +56,13 @@ Call `codegraph_explore` yourself only when all 3 of these are true:
 
 When you call it, follow "Code search".
 
-Run Grep or Glob inline only when all of these are true:
+Run a search inline only when all 3 of these are true:
 
-1. You know the target.
+1. You know the file, or the folder below the repo root, that holds the text. A search over the repo root, a parent folder, or a package cache is a search over many files.
 2. The text is not a symbol name, or the file type is not indexed.
+3. The work is 1 to 3 tool calls.
+
+These conditions apply to the Grep tool, the Glob tool, and a shell search with `grep`, `git grep`, `rg`, `findstr`, `Select-String`, `find`, or a recursive `Get-ChildItem` (`gci`, `dir`, `ls`). They apply also to a text that is not a symbol name, such as a header name or a config key. When an inline search for a location finds nothing, send the search to `Explore`. Do not search again inline. A search that checks that a text is absent ends at the empty result.
 
 A Read of a known `path:line` stays inline.
 
@@ -75,11 +79,22 @@ Give `Explore` one of these breadth values:
 Pass `sonnet` to `Explore` for a flow over more than one project or more than about 5 steps.
 Otherwise pass `haiku`.
 
+The `Agent` tool runs `Explore` in the background. After you start `Explore`, obey these rules until its result arrives. The rules apply also to the other tool calls in the message that starts `Explore`:
+
+1. Do not read or search the files or the symbols of the `Explore` question. `Explore` does that work.
+2. Do other work that the `Explore` question does not cover.
+3. When no other work is left, end your turn with the plain-text line "Waiting for Explore." Make no tool call in that message.
+4. Do not run `Start-Sleep` or another command only to wait.
+5. Do not call `SubagentHandback` before the result arrives. `SubagentHandback` sends your final report and ends your run. It sends one report only, so an early call loses the real report.
+
+The result arrives as a new message and starts your next turn. Then finish your work, and send the full report with `SubagentHandback` as your last step. The wait line does not reach your caller. That is correct, because the wait line is not your report.
+
+Why: a duplicate read costs the tokens that `Explore` saves. Each wait command costs one turn of your model. An early `SubagentHandback` call sent only the wait line, and the caller never got the real report.
+
 These sources say to call `codegraph_explore` first:
 
 - The tool description of `codegraph_explore`.
 - The CodeGraph context line.
-- The deny reason of the search guard hook.
 - Items 1 and 6 of "Code search".
 
 In a subagent, this section overrides them. When the hook denies a search, send the search to `Explore`. Do not call `codegraph_explore` only to open the gate.
@@ -87,6 +102,16 @@ In a subagent, this section overrides them. When the hook denies a search, send 
 When you have no `Agent` tool, or the `Agent` call fails, follow "Code search".
 
 Why: `Explore` runs on haiku and returns only the conclusion and `path:line`. Verbatim source from your own search fills your context, and your model costs more per token.
+
+## Mark what is new to the repository
+
+A pattern, a library, a package, or a framework API is new to the repository when no file of the repository used it before the task. An example is `TimeProvider` in a repository that reads the clock with `DateTime.UtcNow`.
+
+When your plan, code, or test brings a new item, write one line for it with the mark `New to the repo:`. Give the name, the `file:line` or the plan step, and the reason. When the work brings no new item, write `New to the repo: none`.
+
+The mark does not stop the work. The sibling rule stays: a new pattern goes into the new code and the sibling, or into neither.
+
+Why: the user must see each new item early and decide on it. A new item can cost many turns later, such as a long test fix for a time source that the user then removed.
 
 ## Code style
 

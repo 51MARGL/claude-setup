@@ -4,6 +4,8 @@ description: Use for local git work that follows fixed rules for branch names, c
 tools: PowerShell, Bash, Read, Grep, Glob
 model: haiku
 effort: low
+experimental:
+  cacheTtl: 5m
 omitClaudeMd: true
 ---
 

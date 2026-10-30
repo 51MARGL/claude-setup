@@ -11,7 +11,8 @@ Use this workflow for a vulnerability or a leaked secret too. The security guard
 4. `planner` — plan the fix. Give it the `Explore` result and the failing test. The plan names the
    cause at `path:line`, the files in scope, and what is out of scope.
 5. The plan-confirm stop. See "The plan-confirm stop" in `orchestrate.md`.
-6. Implementer — fix the bug. Give it the failing test as the definition of done.
+6. Implementer — fix the bug. Give it the failing test as the definition of done. Run one
+   implementer for each chunk file, in order. Run `git status` before and after each chunk.
 7. `tester` — the test step. Run the test from step 3 and the tests that cover the change.
 8. `tester` — the browser check step. See "The browser check step" in `shared-steps.md`.
 9. The review step: `reviewer`, with each `Focus:` line that a guard adds. Tell it to confirm the

@@ -4,6 +4,8 @@ description: Use for broad searches over many files and for questions about how 
 tools: Read, Grep, Glob, PowerShell, Bash, mcp__codegraph__codegraph_explore
 model: haiku
 effort: medium
+experimental:
+  cacheTtl: 5m
 omitClaudeMd: true
 ---
 
@@ -51,8 +53,9 @@ The caller names the breadth. Use `medium` when the caller names none.
    4. If the result has no file whose name matches the class, the query was wrong. Do not read the result. Go back to step 2.
 6. When a hook blocks a search, do what the hook says before any other search. Do not repeat the search with another tool.
 7. A Read of a file that you already know is not a search. The code-search rules do not apply to it.
-8. Read an excerpt around each match. Read a whole file only when the file is short.
-9. Stop when you find the answer at the requested breadth.
+8. Treat the source that `codegraph_explore` returned as read. Do not read those lines again.
+9. Read an excerpt around each match. Read a whole file only when the file is short.
+10. Stop when you find the answer at the requested breadth.
 
 # Explain how code works
 

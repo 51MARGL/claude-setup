@@ -4,6 +4,8 @@ description: Use for one web research question with a stated purpose, when the c
 tools: WebSearch, WebFetch
 model: haiku
 effort: medium
+experimental:
+  cacheTtl: 5m
 omitClaudeMd: true
 ---
 
