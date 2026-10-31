@@ -59,6 +59,9 @@ the installed copy. The next automatic update overwrites an edited installed fil
     boundary around the program.
   - `env` and other top-level keys (`model`, `effortLevel`, `env.CODEGRAPH_TELEMETRY`, ...): the installer adds a key only when
     the user does not have it. A changed or deleted value never reaches an existing install.
+    `env.CLAUDE_CODE_FORK_SUBAGENT` `0` stops the `agent_summary` calls (a full-transcript model call
+    every 30 s for each background agent, only for the label in the agents panel). It also disables
+    fork subagents. A later delete of the key does not turn the calls back on for an existing install.
   - `hooks`: a hook has the identity `command` + `args`. A hook with new `args` or a new `matcher`
     is added as a second hook. An existing hook is never changed. A hook can have an `if` key, a
     permission rule that limits when the hook runs. The installer copies `if` with the hook.

@@ -166,7 +166,8 @@
   },
   "model": "opus[1m]",
   "env": {
-    "CODEGRAPH_TELEMETRY": "0"
+    "CODEGRAPH_TELEMETRY": "0",
+    "CLAUDE_CODE_FORK_SUBAGENT": "0"
   },
   "hooks": {
     "PostToolUse": [
