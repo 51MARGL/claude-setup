@@ -4,7 +4,8 @@
       "Read(~/.claude/commands/orchestrate.md)",
       "Read(~/.claude/orchestrate/*.md)",
       "Read(~/.claude/STE.md)",
-      "mcp__codegraph__codegraph_explore"
+      "mcp__codegraph__codegraph_explore",
+      "mcp__playwright__browser_type"
     ],
     "deny": [
       "Bash(git push --force *)",
