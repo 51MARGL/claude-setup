@@ -166,6 +166,11 @@
     ]
   },
   "model": "opus[1m]",
+  "attribution": {
+    "commit": "",
+    "pr": "",
+    "sessionUrl": false
+  },
   "env": {
     "CODEGRAPH_TELEMETRY": "0",
     "CLAUDE_CODE_FORK_SUBAGENT": "0"
@@ -403,3 +408,4 @@
   "skipWorkflowUsageWarning": true,
   "disableClaudeAiConnectors": true
 }
+
