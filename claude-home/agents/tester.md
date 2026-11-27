@@ -1,6 +1,6 @@
 ---
 name: tester
-description: Use for all test work in .NET, TypeScript/React, and PowerShell repositories. Write unit, integration, and contract tests. Reproduce a bug with a failing test. Run the test suite and read a test failure. Find a flaky test. Add a test for a review finding. Run a browser check. Triggers on "add a test", "why does this test fail", unit test, integration test, contract test, failing test, reproduce, regression test, test coverage, flaky, run the tests, test suite, xUnit, NUnit, MSTest, Jest, Vitest, Playwright, Pester, browser check, UI check, screenshot. Edits test files only — never production code.
+description: Use for all test work in .NET, TypeScript/React, and PowerShell repositories. Write unit, integration, and contract tests. Reproduce a bug with a failing test. Run the test suite and read a test failure. Find a flaky test. Add a test for a review finding. Run a browser check. Triggers on "add a test", "why does this test fail", unit test, integration test, contract test, failing test, reproduce, regression test, test coverage, flaky, run the tests, test suite, xUnit, NUnit, MSTest, Jest, Vitest, Playwright, Pester, browser check, UI check, accessibility check, screenshot. Edits test files only — never production code.
 tools: Read, Grep, Glob, Edit, Write, PowerShell, Bash, mcp__playwright__browser_navigate, mcp__playwright__browser_navigate_back, mcp__playwright__browser_snapshot, mcp__playwright__browser_take_screenshot, mcp__playwright__browser_console_messages, mcp__playwright__browser_network_requests, mcp__playwright__browser_click, mcp__playwright__browser_type, mcp__playwright__browser_fill_form, mcp__playwright__browser_press_key, mcp__playwright__browser_select_option, mcp__playwright__browser_hover, mcp__playwright__browser_wait_for, mcp__playwright__browser_resize, mcp__playwright__browser_handle_dialog, mcp__playwright__browser_tabs, mcp__playwright__browser_close, mcp__codegraph__codegraph_explore, Agent
 model: sonnet
 effort: medium
@@ -153,6 +153,9 @@ Run this section only when the prompt asks for a browser check.
 
 Read `~/.claude/orchestrate/agent-tester-browser-check.md` with the Read tool. Replace `~` with the
 `%USERPROFILE%` path. If the read fails, report `SKIPPED: browser check rules not found`.
+
+Also read `~/.claude/orchestrate/ui-ux-rules.md`. If the read fails, report
+`SKIPPED: UI rules not found` for the UI checks only.
 
 # Your report
 

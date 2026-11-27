@@ -282,11 +282,13 @@ the installed copy. The next automatic update overwrites an edited installed fil
   `resolve-reference.md`, `findings-rules.md`, `after-compact.md`, `final-report.md`, and
   `effort.md`. The text of these sections lives there, because `orchestrate.md` must stay under the
   cut of 20,000 characters (see "Writing rules"). The folder also holds 3 `agent-*.md` files that
-  `reviewer` (security and migration focus) and `tester` (browser check) read on demand. The folder
+  `reviewer` (security and migration focus) and `tester` (browser check) read on demand. It also
+  holds `ui-ux-rules.md`, which `architect` (UI design), `frontend-developer` (UI change),
+  `reviewer` (UI focus), and `tester` (browser check) read on demand. The folder
   is not under `commands\`, because each file there is a slash command.
 
 `update.ps1` names a file in its message when a new commit changes it (`$sensitivePaths`). The list
-has 48 paths in 3 groups:
+has 49 paths in 3 groups:
 
 1. The files that run code: `install.ps1`, `update.ps1`, `claude-home/hooks/main-session-rules.ps1`,
    `claude-home/hooks/notify.ps1`, `claude-home/hooks/codegraph-init.ps1`, `claude-home/hooks/codegraph-search-guard.ps1`,
@@ -295,7 +297,7 @@ has 48 paths in 3 groups:
 2. The files that set permissions, hooks, tools, or the model: `claude-home/settings.json`,
    `mcp/servers.json`, and the 15 agent files `claude-home/agents/<name>.md`.
 3. The rules that the main session loads or follows: `claude-home/CLAUDE-TEAM.md`,
-   `claude-home/CLAUDE-MAIN.md`, `claude-home/STE.md`, `claude-home/commands/orchestrate.md`, the 16
+   `claude-home/CLAUDE-MAIN.md`, `claude-home/STE.md`, `claude-home/commands/orchestrate.md`, the 17
    files `claude-home/orchestrate/<name>.md`, `claude-home/output-styles/audhd.md`,
    `claude-home/skills/mistakes-log/SKILL.md`, and `claude-home/skills/strategic-compact/SKILL.md`.
 
@@ -406,6 +408,10 @@ Several files hold the same fact. When you change one, change the others in the 
     implementer files and `tester.md`. `planner.md` (the plan `## Summary`, the `plan-implement`
     files, and the return), `orchestrate.md` (plan-confirm step 4 and the `state.md` item list), and
     `final-report.md` use the same mark. Do not copy the definition.
+24. **The UI file types**: the 7 types `.tsx`, `.jsx`, `.css`, `.scss`, `.sass`, `.less`, and `.html`
+    are in "The browser check step" of `shared-steps.md`, in the UI guard of `orchestrate.md` and
+    `pr-reviewer.md`, in the `Focus: ui` rule of `frontend-developer`, and in `README.md` (the
+    guard list). Keep the lists the same.
 
 ## Writing rules for this repository
 

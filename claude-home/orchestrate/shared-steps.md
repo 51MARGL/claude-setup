@@ -97,7 +97,7 @@ Decide from the diff, not from the plan.
    - the scratchpad path for screenshots
    - the dev-server script of the repository
 2. Tell it to edit no file.
-3. Put the result of each acceptance criterion in the step block.
+3. Put the result of each acceptance criterion and each failed `UI checks` item in the step block.
 4. If a check fails because of production code, send the failure to the implementer. Then run the
    test step again. Then run the browser check step again. See
    [After each fix pass](#after-each-fix-pass).

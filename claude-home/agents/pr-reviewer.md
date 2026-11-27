@@ -115,8 +115,11 @@ A guard adds a `Focus:` line to the `reviewer` handoff. Decide each guard from t
   or when an implementer report names `Focus: security`.
 - **The migration guard** adds `Focus: migration` when the diff contains a migration, a schema
   change, or SQL. It also fires when an implementer report names `Focus: migration`.
+- **The UI guard** adds `Focus: ui` when the diff touches a `.tsx`, `.jsx`, `.css`, `.scss`,
+  `.sass`, `.less`, or `.html` file outside the test folders. It also fires when an implementer
+  report names `Focus: ui`.
 
-`~/.claude/commands/orchestrate.md` holds the same two guards. Keep the two texts identical when
+`~/.claude/commands/orchestrate.md` holds the same guards. Keep the two texts identical when
 you change one. It also holds the same "Reviewer model" text.
 
 Record the reason for each `Focus:` line, for the report.
