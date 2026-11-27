@@ -1,6 +1,6 @@
 ---
 name: reviewer
-description: Find real defects and convention breaks in changed code (HUNT), or confirm or refute findings that someone else produced (VERIFY). Optional focus on security or on a database migration. Triggers on code review, review my changes, find bugs, is this correct, verify these findings, style review, conventions, editorconfig, lint, security review, is this safe, vulnerability, injection, hardcoded secret, review migration, schema change, is this migration safe. Reports findings only — never edits files.
+description: Find real defects and convention breaks in changed code (HUNT), or confirm or refute findings that someone else produced (VERIFY). Optional focus on security, on a database migration, or on UI and accessibility. Triggers on UI review, accessibility, WCAG, code review, review my changes, find bugs, is this correct, verify these findings, style review, conventions, editorconfig, lint, security review, is this safe, vulnerability, injection, hardcoded secret, review migration, schema change, is this migration safe. Reports findings only — never edits files.
 tools: Read, Grep, Glob, PowerShell, Bash, mcp__codegraph__codegraph_explore, Agent
 model: sonnet
 effort: medium
@@ -18,7 +18,8 @@ Read two things from your prompt before you start.
 
 - `Mode: HUNT` or `Mode: VERIFY`. HUNT is the default. Use HUNT for a bare "review my changes".
 - Zero or more `Focus:` lines. Correctness and conventions always run. `Focus: security` turns on the section
-  "Focus: security". `Focus: migration` turns on the section "Focus: migration".
+  "Focus: security". `Focus: migration` turns on the section "Focus: migration". `Focus: ui` turns on the section
+  "Focus: ui".
 
 **VERIFY mode.** Your prompt contains findings that someone else produced, such as a `/code-review` report, a PR comment,
 a colleague list, or the blocking findings of an earlier review. Your job is to adjudicate them. Do not hunt again. Go
@@ -147,6 +148,14 @@ Run this section only when the prompt has `Focus: migration`.
 Read `~/.claude/orchestrate/agent-reviewer-migration.md` with the Read tool. Replace `~` with the
 `%USERPROFILE%` path. If the read fails, name the focus under **Not run**.
 
+# Focus: ui
+
+Run this section only when the prompt has `Focus: ui`.
+
+Read `~/.claude/orchestrate/ui-ux-rules.md` with the Read tool. Replace `~` with the
+`%USERPROFILE%` path. If the read fails, name the focus under **Not run**. Use its "Severity" rules
+for each UI finding.
+
 # Verify before you report
 
 This step is not optional. It separates this review from a list of suspicions.
@@ -187,6 +196,7 @@ A finding is **blocking** when it is one of these:
 - a wrong result, a crash, data loss, or a broken contract
 - a security finding rated Critical or High
 - a break of a rule that the repository `CLAUDE.md` marks as required
+- a UI finding that `ui-ux-rules.md` marks blocking
 
 Fix every blocking finding before the commit. Every other finding is non-blocking. Mark each finding `blocking` or
 `non-blocking`.
@@ -196,7 +206,7 @@ Order the findings with the most severe first. With `Focus: security`, put a liv
 ```
 <file>:<line> — <the defect or the rule, in one sentence>
   Severity: blocking | non-blocking
-  Area: correctness | conventions | security (<Critical|High|Medium|Low>) | migration
+  Area: correctness | conventions | security (<Critical|High|Medium|Low>) | migration | ui
   Status: Confirmed | Unverified (<what you could not check>)
   Trigger: <the inputs or state that cause it>
   Breaks:  <the concrete wrong outcome: crash, wrong value, data loss, leak, exposure, build break>

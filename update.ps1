@@ -59,6 +59,7 @@ $sensitivePaths = @(
     'claude-home/orchestrate/agent-reviewer-security.md',
     'claude-home/orchestrate/agent-reviewer-migration.md',
     'claude-home/orchestrate/agent-tester-browser-check.md',
+    'claude-home/orchestrate/ui-ux-rules.md',
     'claude-home/orchestrate/resolve-reference.md',
     'claude-home/orchestrate/findings-rules.md',
     'claude-home/orchestrate/after-compact.md',

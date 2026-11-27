@@ -19,12 +19,13 @@ A browser check edits no file.
 9. Record the current time with `Get-Date`. Do this before the first screenshot.
 10. Call `browser_take_screenshot` with no `filename`. Playwright saves the file in
     `$env:TEMP\playwright-mcp`.
-11. Copy only the files that the result of `browser_take_screenshot` names. Copy them to the
+11. Run the steps of "Browser check" in `ui-ux-rules.md`. Take each screenshot as step 10 says.
+12. Copy only the files that the result of `browser_take_screenshot` names. Copy them to the
     scratchpad path that the prompt names.
-12. If the result names no file, copy only the files in `$env:TEMP\playwright-mcp` with a
+13. If the result names no file, copy only the files in `$env:TEMP\playwright-mcp` with a
     `LastWriteTime` after the time that you recorded.
-13. Copy no other file from `$env:TEMP\playwright-mcp`. Delete no file in that folder.
-14. Run the stop steps below.
+14. Copy no other file from `$env:TEMP\playwright-mcp`. Delete no file in that folder.
+15. Run the stop steps below.
 
 ## The stop steps
 
@@ -38,4 +39,4 @@ Never stop a process that you did not start.
 If the app needs a login, run the stop steps first. Then report `SKIPPED: login needed` and stop.
 Do not enter a credential.
 
-Report each criterion as pass or fail, with the evidence. Name each screenshot path.
+Report each criterion as pass or fail, with the evidence. Name each screenshot path. Report the `UI checks` list after the criteria.

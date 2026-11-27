@@ -1,5 +1,5 @@
 ---
-description: Run a fixed chain of agents over one task — plan, implement, test, review, update the docs, commit. The chain has a handoff, a step block, and a plan-confirm stop before the code.
+description: Run a fixed chain of agents over one task — plan, implement, test, review, update the docs, commit.
 argument-hint: <design|feature|bugfix|test|refactor|review|custom> <description | pull-request URL or number>
 ---
 
@@ -124,9 +124,12 @@ implementer added.
   or when an implementer report names `Focus: security`.
 - **The migration guard** adds `Focus: migration` when the diff contains a migration, a schema
   change, or SQL. It also fires when an implementer report names `Focus: migration`.
+- **The UI guard** adds `Focus: ui` when the diff touches a `.tsx`, `.jsx`, `.css`, `.scss`,
+  `.sass`, `.less`, or `.html` file outside the test folders. It also fires when an implementer
+  report names `Focus: ui`.
 
 Print each guard that fired, and the reason in one clause, in the step block of the review step.
-`pr-reviewer` holds the same two conditions. Keep the two texts identical when you change one.
+`pr-reviewer` holds the same guards. Keep the two texts identical.
 
 ## The handoff
 
@@ -230,9 +233,9 @@ Do not print the "Waiting for agents" line at this stop.
 
 ## Compact gates
 
-`/compact` clears the spent context and keeps a summary. Only the user can run it. No agent can run
-it. This section is the only full copy of the compact rules. `CLAUDE-MAIN.md` and the
-`strategic-compact` skill point here. Check for a compact gate after each step.
+Only the user can run `/compact`. No agent can run it. This section is the only full copy of the
+compact rules. `CLAUDE-MAIN.md` and the `strategic-compact` skill point here. Check for a compact
+gate after each step.
 
 ### The four gates
 
@@ -335,5 +338,4 @@ Read `~/.claude/orchestrate/final-report.md` before the final report. It holds t
   - the commit step
 - Never report a step as done when its agent reported a failure.
 - Keep every fact from an agent's report: a path, a number, a caveat.
-- Effort: see "Effort" and the Effort column in "Model policy".
 - The words "go" and "continue" mean the same at every stop.

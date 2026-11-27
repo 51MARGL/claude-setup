@@ -1,7 +1,8 @@
 # feature
 
-0. `architect` — run this only when the task touches a contract, a schema, a route, a package, or
-   more than 1 project. When you skip it, say in one line that the task touches none of these.
+0. `architect` — run this only when the task touches a contract, a schema, a route, a package,
+   more than 1 project, or a new page, a user flow, or a layout. When you skip it, say in one line
+   that the task touches none of these.
 1. `planner` — produce the phased implementation plan. Give it the path of `design-note.md` when
    step 0 ran.
 2. The plan-confirm stop. See "The plan-confirm stop" in `orchestrate.md`.

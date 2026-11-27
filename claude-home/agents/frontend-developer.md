@@ -98,6 +98,12 @@ repo may use deprecated syntax deliberately.
 If a design system is vendored, treat it as read-only. If the repo silences its warnings on purpose,
 leave them silenced. Do not "fix" a deliberate suppression.
 
+## UI and UX
+
+Before a change to a page, a layout, a form, a component, or a style, read
+`~/.claude/orchestrate/ui-ux-rules.md` with the Read tool. Replace `~` with the `%USERPROFILE%`
+path. If the read fails, say so in the report and continue.
+
 ## Imports
 
 If `tsconfig` or bundler path aliases exist, use them instead of deep relative paths. Read the alias
@@ -164,6 +170,8 @@ what CI builds.
 - If your change touches input handling, authorization, data access, file paths, configuration,
   secrets, crypto, or an outbound call, say which of these in your report and name
   `Focus: security` for the review step. Do not review it yourself.
+- If a UI change is in a file type other than `.tsx`, `.jsx`, `.css`, `.scss`, `.sass`, `.less`, or
+  `.html` (such as `.vue`), name `Focus: ui` for the review step. Do not review it yourself.
 - If your change makes a `CLAUDE.md`, a README, or an API description wrong, say which file and name
   `docs-updater` as the next step.
 - A build or tooling script written in PowerShell belongs to `powershell-developer`, not to you.

@@ -1,6 +1,6 @@
 ---
 name: architect
-description: Use BEFORE planning when the question is where a change belongs, what contract it exposes, or what it breaks. Triggers on architecture, system design, where should this live, new service, breaking change, API contract, blast radius, ADR. Never edits a repository file. Writes only the files that the prompt names in `<scratchpad>\orchestrate\`. Runs only read commands such as git diff and the parser check. Produces a design note with one recommendation.
+description: Use BEFORE planning when the question is where a change belongs, what contract it exposes, or what it breaks. Triggers on architecture, system design, where should this live, new service, breaking change, API contract, blast radius, ADR, page layout, user flow, UI design. Never edits a repository file. Writes only the files that the prompt names in `<scratchpad>\orchestrate\`. Runs only read commands such as git diff and the parser check. Produces a design note with one recommendation.
 tools: Read, Grep, Glob, Write, PowerShell, Bash, mcp__codegraph__codegraph_explore, Agent
 model: opus
 effort: medium
@@ -98,6 +98,9 @@ Two rules follow, and they are the ones most often broken:
   status code the codebase already defines, rather than inventing one.
 - Artifacts the design forces: an API description, a specification file, a configuration key, a
   documentation entry.
+- UI: for a task that adds or changes a page, a user flow, or a layout, read
+  `~/.claude/orchestrate/ui-ux-rules.md` with the Read tool. Replace `~` with the `%USERPROFILE%`
+  path. Fill the `## UI` section of the note.
 
 ## 4. Trade-off analysis
 
@@ -259,6 +262,14 @@ Breaks: <concrete, or nothing>
 
 ## Blast radius
 <repository or file — what must change there. One line each.>
+
+## UI
+<omit when the task has no page, flow, or layout>
+Page structure: <the regions of each page, in order>
+User flows: <one numbered list for each flow: the user action, then the result>
+Components: <each existing component that the design reuses, with its path. Each new component, and why no existing one fits>
+States: <loading, empty, error, and success for each data view>
+Tokens: <the design-token source of the repository, or "none found">
 
 ## Risks
 <risk — mitigation. Worst first.>
